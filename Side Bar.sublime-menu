@@ -1,0 +1,20 @@
+[
+    {
+        "caption": "Claudette",
+        "children": [
+            {
+                "caption": "Include in Context",
+                "command": "claudette_include_in_context",
+                "args": {"files": []}
+            },
+            {
+                "caption": "Show Included Files",
+                "command": "claudette_show_included_files"
+            },
+            {
+                "caption": "Clear Included Files",
+                "command": "claudette_clear_included_files"
+            }
+        ]
+    }
+]
