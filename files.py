@@ -137,8 +137,16 @@ class ClaudetteClearIncludedFilesCommand(sublime_plugin.WindowCommand):
             sublime.error_message("No active Claudette chat view found")
             return
 
-        chat_view.settings().set('claudette_included_files', {})
-        sublime.status_message("Cleared all included files from context")
+        included_files = chat_view.settings().get('claudette_included_files', {})
+        file_count = len(included_files)
+
+        # Show confirmation dialog
+        if sublime.ok_cancel_dialog(
+            f"Clear {file_count} file{'s' if file_count != 1 else ''} from context?",
+            "Clear Files"
+        ):
+            chat_view.settings().set('claudette_included_files', {})
+            sublime.status_message("Cleared all included files from context")
 
     def get_chat_view(self):
         for view in self.window.views():
@@ -148,7 +156,16 @@ class ClaudetteClearIncludedFilesCommand(sublime_plugin.WindowCommand):
         return None
 
     def is_visible(self):
+        """Controls whether the command appears at all"""
         return bool(self.get_chat_view())
+
+    def is_enabled(self):
+        """Controls whether the command is greyed out"""
+        chat_view = self.get_chat_view()
+        if not chat_view:
+            return False
+        included_files = chat_view.settings().get('claudette_included_files', {})
+        return bool(included_files)
 
 class ClaudetteShowIncludedFilesCommand(sublime_plugin.WindowCommand):
     def run(self):
@@ -159,7 +176,7 @@ class ClaudetteShowIncludedFilesCommand(sublime_plugin.WindowCommand):
 
         self.included_files = chat_view.settings().get('claudette_included_files', {})
         if not self.included_files:
-            sublime.message_dialog("No files are currently included in the context")
+            sublime.status_message("No files are currently included in the context")
             return
 
         # Create items list for quick panel
@@ -230,4 +247,13 @@ class ClaudetteShowIncludedFilesCommand(sublime_plugin.WindowCommand):
         return None
 
     def is_visible(self):
-        return bool(self.get_chat_view())
+        chat_view = self.get_chat_view()
+        return bool(chat_view)
+
+    def is_enabled(self):
+        """Controls whether the command is greyed out"""
+        chat_view = self.get_chat_view()
+        if not chat_view:
+            return False
+        included_files = chat_view.settings().get('claudette_included_files', {})
+        return bool(included_files)
