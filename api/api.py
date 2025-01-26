@@ -145,6 +145,14 @@ class ClaudeAPI:
 
                             data = json.loads(chunk)
                             if 'delta' in data and 'text' in data['delta']:
+                                # Extract usage info if present
+                                usage_info = ""
+                                if 'usage' in data:
+                                    usage = data['usage']
+                                    cache_info = " (cached)" if usage.get('cached', False) else ""
+                                    usage_info = f"Tokens: {usage.get('input_tokens', 0)} in, {usage.get('output_tokens', 0)} out{cache_info}"
+                                    sublime.status_message(usage_info)
+                                
                                 sublime.set_timeout(
                                     lambda text=data['delta']['text']: chunk_callback(text),
                                     0
