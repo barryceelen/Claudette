@@ -5,8 +5,8 @@
     "parsableStyle": false,
     "fileSummary": true,
     "directoryStructure": true,
-    "removeComments": false,
-    "removeEmptyLines": false,
+    "removeComments": true,
+    "removeEmptyLines": true,
     "topFilesLength": 5,
     "showLineNumbers": false,
     "copyToClipboard": false
@@ -18,7 +18,7 @@
     "customPatterns": []
   },
   "security": {
-    "enableSecurityCheck": true
+    "enableSecurityCheck": false
   },
   "tokenCount": {
     "encoding": "o200k_base"
