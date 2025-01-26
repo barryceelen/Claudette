@@ -79,4 +79,10 @@ For Linux and Windows:
 2. Get an API key from [Anthropic](https://console.anthropic.com/)
 3. Configure API key in *Preferences > Package Settings > Claudette > Settings*
 
+## Privacy & Legal
+
+Note that this package interacts with the Anthropic Claude API and thus the code that you share with the API will be sent to Anthropic's servers. For information about Anthropic's privacy practices, data processing, and legal compliance, please visit the [Privacy & Legal documentation](https://support.anthropic.com/en/collections/4078534-privacy-legal).
+
+## Credits
+
 The package is for the most part written by Claude AI itself!
