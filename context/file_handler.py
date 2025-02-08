@@ -19,15 +19,15 @@ class FileHandler:
             file_content = ''
 
             with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-
-            api_tokens = estimate_api_tokens(file_content)
+                file_content = f.read()
 
             self.files[relative_path] = {
                 'content': file_content,
-                'api_tokens': api_tokens,
+                'api_tokens': estimate_api_tokens(file_content),
                 'absolute_path': file_path
             }
+
+            print(self.files[relative_path])
 
             return relative_path
 

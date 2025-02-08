@@ -27,7 +27,7 @@ class ClaudeAPI:
         except (TypeError, ValueError):
             return 1.0
 
-    def stream_response(self, chunk_callback, messages):
+    def stream_response(self, chunk_callback, messages, chat_view=None):
         """Stream API response for the given messages."""
         if not messages or not any(msg.get('content', '').strip() for msg in messages):
             return
@@ -40,46 +40,69 @@ class ClaudeAPI:
 
         try:
             self.spinner.start('Fetching response')
+
             headers = {
                 'x-api-key': self.api_key,
                 'anthropic-version': ANTHROPIC_VERSION,
                 'content-type': 'application/json',
             }
 
-            # Filter out empty messages
             filtered_messages = [
                 msg for msg in messages
                 if msg.get('content', '').strip()
             ]
+
+            system_messages = [
+                {
+                    "type": "text",
+                    "text": 'Wrap all code examples in a markdown code block. Ensure each code block is complete and self-contained.',
+                }
+            ]
+
+            settings_system_messages = self.settings.get('system_messages', [])
+            default_index = self.settings.get('default_system_message_index', 0)
+
+            if (settings_system_messages and
+                isinstance(settings_system_messages, list) and
+                isinstance(default_index, int) and
+                0 <= default_index < len(settings_system_messages)):
+
+                selected_message = settings_system_messages[default_index]
+                if selected_message and selected_message.strip():
+                    system_messages.append({
+                        "type": "text",
+                        "text": selected_message.strip()
+                    })
+
+            if chat_view:
+                context_files = chat_view.settings().get('claudette_context_files', {})
+                print('asdfasdfasdfas')
+                print(context_files)
+                if context_files:
+                    combined_content = "<reference_files>\n"
+                    for file_path, file_info in context_files.items():
+                        if file_info.get('content'):
+                            combined_content += f"<file>\n"
+                            combined_content += f"<path>{file_path}</path>\n"
+                            combined_content += f"<content>\n{file_info['content']}\n</content>\n"
+                            combined_content += "</file>\n"
+                    combined_content += "</reference_files>"
+
+                    if combined_content != "<reference_files>\n</reference_files>":
+                        system_messages.append({
+                            "cache_control": {"type": "ephemeral"},
+                            "type": "text",
+                            "text": combined_content
+                        })
 
             data = {
                 'messages': filtered_messages,
                 'max_tokens': MAX_TOKENS,
                 'model': self.model,
                 'stream': True,
-                "system": [
-                    {
-                        "type": "text",
-                        "text": 'Please wrap all code examples in a markdown code block and ensure each code block is complete and self-contained.',
-                    }
-                ],
+                'system': system_messages,
                 'temperature': self.get_valid_temperature(self.temperature)
             }
-
-            system_messages = self.settings.get('system_messages', [])
-            default_index = self.settings.get('default_system_message_index', 0)
-
-            if (system_messages and
-                isinstance(system_messages, list) and
-                isinstance(default_index, int) and
-                0 <= default_index < len(system_messages)):
-
-                selected_message = system_messages[default_index]
-                if selected_message and selected_message.strip():
-                    data['system'].append({
-                        "type": "text",
-                        "text": selected_message.strip()
-                    })
 
             req = urllib.request.Request(
                 urllib.parse.urljoin(self.BASE_URL, 'messages'),
