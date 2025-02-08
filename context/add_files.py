@@ -3,6 +3,8 @@ import sublime_plugin
 import os
 from .file_handler import FileHandler
 
+from ..utils import claudette_chat_status_message
+
 class ClaudetteContextAddFilesCommand(sublime_plugin.WindowCommand):
     def run(self, paths=None):
         if not paths:
@@ -37,20 +39,21 @@ class ClaudetteContextAddFilesCommand(sublime_plugin.WindowCommand):
         dirs_count = sum(1 for p in paths if os.path.isdir(p))
         files_count = sum(1 for p in paths if os.path.isfile(p))
 
-        msg_parts = []
+        message_parts = []
         if dirs_count > 0:
-            msg_parts.append(f"{dirs_count} {'directory' if dirs_count == 1 else 'directories'}")
+            message_parts.append(f"{dirs_count} {'directory' if dirs_count == 1 else 'directories'}")
         if files_count > 0:
-            msg_parts.append(f"{files_count} {'file' if files_count == 1 else 'files'}")
+            message_parts.append(f"{files_count} {'file' if files_count == 1 else 'files'}")
 
-        base_msg = f"Included {' and '.join(msg_parts)}"
+        message = f"Included {' and '.join(message_parts)}"
 
         if result['processed_files'] > 0:
-            base_msg += f" ({result['processed_files']} total files processed)"
+            message += f" ({result['processed_files']} total files processed)"
         if result['skipped_files'] > 0:
-            base_msg += f", skipped {result['skipped_files']} files"
+            message += f", skipped {result['skipped_files']} files"
 
-        sublime.status_message(base_msg)
+        claudette_chat_status_message(self.window, message, "✅")
+        sublime.status_message(message)
 
     def get_chat_view(self):
         for view in self.window.views():

@@ -1,6 +1,8 @@
 import sublime
 import sublime_plugin
 
+from ..utils import claudette_chat_status_message
+
 class ClaudetteContextClearFilesCommand(sublime_plugin.WindowCommand):
     def run(self):
         chat_view = self.get_chat_view()
@@ -16,7 +18,8 @@ class ClaudetteContextClearFilesCommand(sublime_plugin.WindowCommand):
             "Remove Files"
         ):
             chat_view.settings().set('claudette_context_files', {})
-            sublime.status_message("Removed all files from the chat context")
+            claudette_chat_status_message(self.window, "Included files cleared", "✅")
+            sublime.status_message("Included files cleared")
 
     def get_chat_view(self):
         for view in self.window.views():

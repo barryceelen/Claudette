@@ -1,6 +1,8 @@
 import sublime
 import sublime_plugin
 
+from ..utils import claudette_chat_status_message
+
 class ClaudetteContextManageFilesCommand(sublime_plugin.WindowCommand):
     def run(self):
         chat_view = self.get_chat_view()
@@ -55,6 +57,7 @@ class ClaudetteContextManageFilesCommand(sublime_plugin.WindowCommand):
             if chat_view:
                 self.included_files.pop(self.selected_file)
                 chat_view.settings().set('claudette_context_files', self.included_files)
+                claudette_chat_status_message(self.window, f"Removed {self.selected_file} from the chat context", "✅")
                 sublime.status_message(f"Removed {self.selected_file} from the chat context")
 
                 if self.included_files:
