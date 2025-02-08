@@ -1,3 +1,6 @@
+import mimetypes
+from pathlib import Path
+
 def claudette_chat_status_message(window, message: str, prefix: str = "ℹ️") -> None:
     """
     Display a status message in the active chat view.
@@ -33,3 +36,17 @@ def claudette_chat_status_message(window, message: str, prefix: str = "ℹ️") 
         'scroll_to_end': True
     })
     current_chat_view.set_read_only(True)
+
+def estimate_api_tokens(text):
+    """Estimate Claude API tokens based on character count (rough approximation)."""
+    return len(text) // 4
+
+def is_text_file(file_path):
+    """Check if a file is a text file using mimetype."""
+    mime_type, _ = mimetypes.guess_type(file_path)
+    if mime_type is None:
+        text_extensions = {'.txt', '.py', '.js', '.html', '.css', '.json', '.md',
+                         '.csv', '.xml', '.yml', '.yaml', '.ini', '.conf', '.sh',
+                         '.rb', '.php', '.java', '.cpp', '.h', '.c', '.rs', '.go'}
+        return Path(file_path).suffix.lower() in text_extensions
+    return mime_type.startswith('text/')

@@ -1,2 +1,3 @@
-repomix-output.*
 .aider*
+.env
+repomix-output.*

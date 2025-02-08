@@ -28,6 +28,10 @@
 		"command": "claudette_select_system_message_panel"
 	},
 	{
+		"caption": "Claudette: Show Included Files",
+		"command": "claudette_context_manage_files"
+	},
+	{
 		"caption": "Claudette: Settings",
 		"command": "edit_settings",
 		"args": {
