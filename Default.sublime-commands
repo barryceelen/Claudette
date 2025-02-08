@@ -28,7 +28,7 @@
 		"command": "claudette_select_system_message_panel"
 	},
 	{
-	    "caption": "Claude: Show Included Files",
-	    "command": "claudette_show_included_files"
+		"caption": "Claudette: Show Included Files",
+		"command": "claudette_context_manage_files"
 	}
 ]
