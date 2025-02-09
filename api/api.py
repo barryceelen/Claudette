@@ -11,28 +11,6 @@ CACHE_SUPPORTED_MODEL_PREFIXES = { 'claude-3' }
 class ClaudeAPI:
     BASE_URL = 'https://api.anthropic.com/v1/'
 
-    # Claude pricing per 1K tokens (as of February 2025)
-    PRICING = {
-        'claude-3-opus': {
-            'input': 0.015, # $15/MTok
-            'output': 0.075, # $75/MTok
-            'cache_write': 0.01875, # $18.75/MTok
-            'cache_read': 0.0015 # $1.50/MTok
-        },
-        'claude-3.5-sonnet': {
-            'input': 0.003, # $3/MTok
-            'output': 0.015, # $15/MTok
-            'cache_write': 0.00375, # $3.75/MTok
-            'cache_read': 0.0003 # $0.30/MTok
-        },
-        'claude-3.5-haiku': {
-            'input': 0.0008, # $0.80/MTok
-            'output': 0.004, # $4/MTok
-            'cache_write': 0.001, # $1/MTok
-            'cache_read': 0.00008 # $0.08/MTok
-        }
-    }
-
     def __init__(self):
         self.settings = sublime.load_settings(SETTINGS_FILE)
         self.api_key = self.settings.get('api_key')
@@ -43,6 +21,7 @@ class ClaudeAPI:
         self.session_input_tokens = 0
         self.session_output_tokens = 0
         self.spinner = Spinner()
+        self.pricing = self.settings.get('pricing')
 
     @staticmethod
     def get_valid_temperature(temp):
@@ -69,13 +48,13 @@ class ClaudeAPI:
 
         # Find the matching price tier
         price_tier = None
-        for tier in self.PRICING:
+        for tier in self.pricing:
             if model.startswith(tier):
-                price_tier = self.PRICING[tier]
+                price_tier = self.pricing[tier]
                 break
 
         if not price_tier:
-            price_tier = self.PRICING['claude-3.5-sonnet']
+            price_tier = self.pricing['claude-3.5-sonnet']
 
         # Calculate costs for each operation
         input_cost = ((input_tokens - cache_read_tokens) / 1000) * price_tier['input']
