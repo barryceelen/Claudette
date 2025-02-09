@@ -255,7 +255,11 @@ class ClaudeAPI:
                                 else:
                                     session_cost_str = f"${current_cost:.4f}"
 
-                                status_message = f"Tokens: {input_tokens:,} sent, {output_tokens:,} received{cache_info}. Cost: {current_cost_str} (message), {session_cost_str} (session)"
+                                status_message = f"Tokens: {input_tokens:,} sent, {output_tokens:,} received{cache_info}."
+
+                                if session_stats['cost'] > 0:
+                                    status_message_cost = f" Cost: {current_cost_str} message, {session_cost_str} session."
+                                    status_message = status_message + status_message_cost
 
                                 # Schedule status message on main thread with a delay
                                 def show_delayed_status():
