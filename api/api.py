@@ -6,11 +6,7 @@ import urllib.error
 from ..statusbar.spinner import Spinner
 from ..constants import ANTHROPIC_VERSION, DEFAULT_MODEL, MAX_TOKENS, SETTINGS_FILE
 
-CACHE_SUPPORTED_MODEL_PREFIXES = {
-    'claude-3-haiku',
-    'claude-3-opus',
-    'claude-3-sonnet'
-}
+CACHE_SUPPORTED_MODEL_PREFIXES = { 'claude-3' }
 
 class ClaudeAPI:
     BASE_URL = 'https://api.anthropic.com/v1/'
