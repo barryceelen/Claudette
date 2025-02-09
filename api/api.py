@@ -112,7 +112,7 @@ class ClaudeAPI:
 
                         system_messages.append(system_message)
 
-                repomix_content = chat_view.settings().get('claudette_repomix')
+                    repomix_content = chat_view.settings().get('claudette_repomix')
                     if repomix_content:
                         system_message = {
                             "type": "text",
