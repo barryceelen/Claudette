@@ -19,24 +19,24 @@
 	"default_system_message_index": 0,
 	// Claude pricing per 1K tokens (as of February 2025)
 	"pricing": {
-		"claude-3-opus": {
+		"haiku": {
+			"input": 0.0008,
+			"output": 0.004,
+			"cache_write": 0.001,
+			"cache_read": 0.00008
+		},
+		"opus": {
 			"input": 0.015,
 			"output": 0.075,
 			"cache_write": 0.01875,
 			"cache_read": 0.0015
 		},
-		"claude-3.5-sonnet": {
+		"sonnet": {
 			"input": 0.003,
 			"output": 0.015,
 			"cache_write": 0.00375,
 			"cache_read": 0.0003
 		},
-		"claude-3.5-haiku": {
-			"input": 0.0008,
-			"output": 0.004,
-			"cache_write": 0.001,
-			"cache_read": 0.00008
-		}
 	},
 	"chat": {
 		"line_numbers": false,

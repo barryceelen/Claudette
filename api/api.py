@@ -46,17 +46,17 @@ class ClaudeAPI:
         if model is None:
             model = self.model
 
-        # Find the matching price tier
         price_tier = None
-        for tier in self.pricing:
-            if model.startswith(tier):
+        model_lower = model.lower()
+
+        for tier in self.pricing.keys():
+            if tier in model_lower:
                 price_tier = self.pricing[tier]
                 break
 
         if not price_tier:
-            price_tier = self.pricing['claude-3.5-sonnet']
+            return 0
 
-        # Calculate costs for each operation
         input_cost = ((input_tokens - cache_read_tokens) / 1000) * price_tier['input']
         output_cost = (output_tokens / 1000) * price_tier['output']
         cache_write_cost = (cache_write_tokens / 1000) * price_tier.get('cache_write', 0)
