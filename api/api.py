@@ -3,8 +3,14 @@ import json
 import urllib.request
 import urllib.parse
 import urllib.error
-from ..constants import ANTHROPIC_VERSION, DEFAULT_MODEL, MAX_TOKENS, SETTINGS_FILE
 from ..statusbar.spinner import Spinner
+from ..constants import ANTHROPIC_VERSION, DEFAULT_MODEL, MAX_TOKENS, SETTINGS_FILE
+
+CACHE_SUPPORTED_MODEL_PREFIXES = {
+    'claude-3-haiku',
+    'claude-3-opus',
+    'claude-3-sonnet'
+}
 
 class ClaudeAPI:
     BASE_URL = 'https://api.anthropic.com/v1/'
@@ -26,6 +32,13 @@ class ClaudeAPI:
             return 1.0
         except (TypeError, ValueError):
             return 1.0
+
+    @staticmethod
+    def should_use_cache_control(model):
+        """Determine if cache control should be used based on model."""
+        if not model:
+            return False
+        return any(model.startswith(prefix) for prefix in CACHE_SUPPORTED_MODEL_PREFIXES)
 
     def stream_response(self, chunk_callback, messages, chat_view=None):
         """Stream API response for the given messages."""
@@ -89,11 +102,15 @@ class ClaudeAPI:
                     combined_content += "</reference_files>"
 
                     if combined_content != "<reference_files>\n</reference_files>":
-                        system_messages.append({
-                            "cache_control": {"type": "ephemeral"},
+                        system_message = {
                             "type": "text",
                             "text": combined_content
-                        })
+                        }
+
+                        if self.should_use_cache_control(self.model):
+                            system_message["cache_control"] = {"type": "ephemeral"}
+
+                        system_messages.append(system_message)
 
             data = {
                 'messages': filtered_messages,
