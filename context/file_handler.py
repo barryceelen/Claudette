@@ -27,8 +27,6 @@ class FileHandler:
                 'absolute_path': file_path
             }
 
-            print(self.files[relative_path])
-
             return relative_path
 
         except Exception as e:

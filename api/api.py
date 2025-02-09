@@ -159,8 +159,6 @@ class ClaudeAPI:
 
             if chat_view:
                 context_files = chat_view.settings().get('claudette_context_files', {})
-                print('asdfasdfasdfas')
-                print(context_files)
                 if context_files:
                     combined_content = "<reference_files>\n"
                     for file_path, file_info in context_files.items():
