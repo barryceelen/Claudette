@@ -84,7 +84,7 @@ For Linux and Windows:
 
 ## Privacy & legal
 
-Note that this package interacts directly with the Anthropic Claude API. All code that you share via the API, e.g. by including it in a chat, will be sent to Anthropic's servers. For information about Anthropic's privacy practices, data processing, and legal compliance, please visit the [Privacy & Legal documentation](https://support.anthropic.com/en/collections/4078534-privacy-legal).
+All code that you share with the Anthropic Claude API, for example by including it in a chat, will be sent to Anthropic's servers. For information about Anthropic's privacy practices, data processing, and legal compliance, please visit the [Privacy & Legal documentation](https://support.anthropic.com/en/collections/4078534-privacy-legal).
 
 ## Credits
 
