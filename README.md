@@ -20,7 +20,8 @@ All commands are available via the *Tools > Claudette* menu or via the command p
 
 - **Ask Question**  
 *claudette\_ask\_question*  
-Opens a question input prompt. Submit your question with the <kbd>⏎ Enter</kbd> key. <kbd>⇧ Shift</kbd> + <kbd>⏎ Enter</kbd> for line breaks.
+Opens a question input prompt. Submit your question with the <kbd>⏎ Enter</kbd> key. <kbd>⇧ Shift</kbd> + <kbd>⏎ Enter</kbd> for line breaks.  
+**Pro tip:** In a chat view, press <kbd>Enter</kbd> to ask a question.
 
 - **Ask Question In New Chat View**  
 *claudette\_ask\_new\_question*  
@@ -71,8 +72,6 @@ For Linux and Windows:
 	}
 ]
 ```
-
-**Pro tip:** press <kbd>Enter</kbd> when in a chat view to ask a question.
 
 ## Installation
 

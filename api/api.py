@@ -55,59 +55,64 @@ class ClaudeAPI:
 
         try:
             self.spinner.start('Fetching response')
+
             headers = {
                 'x-api-key': self.api_key,
                 'anthropic-version': ANTHROPIC_VERSION,
                 'content-type': 'application/json',
             }
 
-            # Filter out empty messages
             filtered_messages = [
                 msg for msg in messages
                 if msg.get('content', '').strip()
             ]
 
-            data = {
-                'messages': filtered_messages,
-                'max_tokens': MAX_TOKENS,
-                'model': self.model,
-                'stream': True,
-                "system": [
-                    {
-                        "type": "text",
-                        "text": 'Please wrap all code examples in a markdown code block and ensure each code block is complete and self-contained.',
-                    }
-                ],
-                'temperature': self.get_valid_temperature(self.temperature)
-            }
+            system_messages = [
+                {
+                    "type": "text",
+                    "text": 'Wrap all code examples in a markdown code block. Ensure each code block is complete and self-contained.',
+                }
+            ]
 
-            system_messages = self.settings.get('system_messages', [])
+            settings_system_messages = self.settings.get('system_messages', [])
             default_index = self.settings.get('default_system_message_index', 0)
 
-            if (system_messages and
-                isinstance(system_messages, list) and
+            if (settings_system_messages and
+                isinstance(settings_system_messages, list) and
                 isinstance(default_index, int) and
-                0 <= default_index < len(system_messages)):
+                0 <= default_index < len(settings_system_messages)):
 
-                selected_message = system_messages[default_index]
+                selected_message = settings_system_messages[default_index]
                 if selected_message and selected_message.strip():
-                    data['system'].append({
+                    system_messages.append({
                         "type": "text",
                         "text": selected_message.strip()
                     })
 
-            # @todo It's likely better to pass along the system message to stream_response()
-            # Find the active chat view
-            window = sublime.active_window()
-            if window:
-                current_chat_view = None
-                for view in window.views():
-                    if (view.settings().get('claudette_is_chat_view', False) and
-                        view.settings().get('claudette_is_current_chat', False)):
-                        current_chat_view = view
+            if chat_view:
+                context_files = chat_view.settings().get('claudette_context_files', {})
+                if context_files:
+                    combined_content = "<reference_files>\n"
+                    for file_path, file_info in context_files.items():
+                        if file_info.get('content'):
+                            combined_content += f"<file>\n"
+                            combined_content += f"<path>{file_path}</path>\n"
+                            combined_content += f"<content>\n{file_info['content']}\n</content>\n"
+                            combined_content += "</file>\n"
+                    combined_content += "</reference_files>"
 
-                if current_chat_view:
-                    repomix_content = current_chat_view.settings().get('claudette_repomix')
+                    if combined_content != "<reference_files>\n</reference_files>":
+                        system_message = {
+                            "type": "text",
+                            "text": combined_content
+                        }
+
+                        if self.should_use_cache_control(self.model):
+                            system_message["cache_control"] = {"type": "ephemeral"}
+
+                        system_messages.append(system_message)
+
+                repomix_content = chat_view.settings().get('claudette_repomix')
                     if repomix_content:
                         system_message = {
                             "type": "text",
@@ -117,7 +122,16 @@ class ClaudeAPI:
                         if self.should_use_cache_control(self.model):
                             system_message["cache_control"] = {"type": "ephemeral"}
 
-                        data['system'].append(system_message)
+                        system_messages.append(system_message)
+
+            data = {
+                'messages': filtered_messages,
+                'max_tokens': MAX_TOKENS,
+                'model': self.model,
+                'stream': True,
+                'system': system_messages,
+                'temperature': self.get_valid_temperature(self.temperature)
+            }
 
             req = urllib.request.Request(
                 urllib.parse.urljoin(self.BASE_URL, 'messages'),
@@ -125,8 +139,6 @@ class ClaudeAPI:
                 headers=headers,
                 method='POST'
             )
-
-            print("System messages being sent:", json.dumps(data['system'], indent=2))
 
             try:
                 with urllib.request.urlopen(req) as response:

@@ -5,7 +5,7 @@
 	// Note that a 'Switch Model' command exists that allows you to select the model via the command palette.
 	//
 	// https://docs.anthropic.com/en/docs/about-claude/models#model-comparison-table
-	"model": "claude-3-opus-latest",
+	"model": "claude-3-sonnet-latest",
 	// The system message is added when the first request is sent to the Anthropic API.
 	// If an empty system message is selected as the default_system_message_index, no system message will be sent.
 	"system_messages": [

@@ -1,11 +1,21 @@
 [
     {
-        "caption": "-",
-        "id": "side-bar-files-separator"
-    },
-    {
         "caption": "Claudette",
+        "id": "side-bar-claudette",
         "children": [
+            {
+                "caption": "Include in Context",
+                "command": "claudette_context_add_files",
+                "args": {"paths": []}
+            },
+            {
+                "caption": "Show Included Files",
+                "command": "claudette_context_manage_files"
+            },
+            {
+                "caption": "Clear Included Files",
+                "command": "claudette_context_clear_files"
+            },
             {
                 "caption": "Repomix Run",
                 "command": "claudette_run_repomix",
@@ -15,7 +25,6 @@
                 "caption": "Repomix Clear",
                 "command": "claudette_clear_repomix",
             }
-        ],
-        "id": "side-bar-claudette"
+        ]
     }
 ]
