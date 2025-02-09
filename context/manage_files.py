@@ -41,7 +41,7 @@ class ClaudetteContextManageFilesCommand(sublime_plugin.WindowCommand):
         self.window.show_quick_panel(
             items=options,
             on_select=self.on_option_selected,
-            flags=sublime.NONE
+            flags=sublime.KEEP_OPEN_ON_FOCUS_LOST
         )
 
     def on_option_selected(self, index):
