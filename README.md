@@ -1,8 +1,8 @@
 # Claudette – Claude AI Assistant for Sublime Text
 
-![Claude Chat View](/screenshot.png?raw=true "Ask Claude")
+![Claude Chat View](https://raw.githubusercontent.com/barryceelen/Claudette/main/screenshot.png "Ask Claude")
 
-A [Sublime Text](http://www.sublimetext.com) package that integrates the Anthropic Claude API into your editor.
+A [Sublime Text](http://www.sublimetext.com) package that integrates the Anthropic Claude AI API into your editor.
 
 Type "Ask Question" in the command palette or find the *Claudette > Ask Question* item in the *Tools* menu to ask a question. Any selected text in the current file will be sent along to the Anthropic Claude API. Note that a Claude API key is required.
 
@@ -14,7 +14,7 @@ Type "Ask Question" in the command palette or find the *Claudette > Ask Question
 - Configure custom [system prompts](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/system-prompts) to customize Claude's behavior
 - Chat History: Export and import conversations as JSON files
 
-## Available commands
+## Commands
 
 All commands are available via the *Tools > Claudette* menu or via the command palette.
 
@@ -46,9 +46,9 @@ Claudette chat is powered by Claude 3.5 Sonnet by default, but you can switch be
 *claudette\_select\_system\_message\_panel*  
 Improve Claude's performance by using a [system prompt](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/system-prompts). You can create and manage multiple prompts.
 
-## Key Bindings
+## Keyboard shortcuts
 
-The Claudette package does not add [key bindings](https://www.sublimetext.com/docs/key_bindings.html) for its commands out of the box. The following example adds a handy keyboard shortcut that opens the "Ask Question" panel. You can add your own keyboard shortcuts via the *Settings > Keybindings* settings menu.
+The Claudette package does not add [key bindings](https://www.sublimetext.com/docs/key_bindings.html) out of the box. You can add your own keyboard shortcuts via the *Settings > Keybindings* settings menu. The following example adds a keyboard shortcut that opens the "Ask Question" panel.
 
 For OSX:
 
@@ -72,17 +72,21 @@ For Linux and Windows:
 ]
 ```
 
+**Pro tip:** press <kbd>Enter</kbd> when in a chat view to ask a question.
+
 ## Installation
 
-1. In Sublime Text, add the `https://github.com/barryceelen/Claudette` repository URL via the *Package Control: Add Repository* command
-2. Once the repository is added, use the *Package Control: Install Package* command to install the `Claudette` package
-2. Get an API key from [Anthropic](https://console.anthropic.com/)
-3. Configure API key in *Preferences > Package Settings > Claudette > Settings*
+1. Install [Package Control](https://packagecontrol.io/installation) if you haven't already
+2. Open the Command Palette (<kbd>⌘</kbd>+<kbd>⇧</kbd>+<kbd>P</kbd> on Mac, <kbd>Ctrl</kbd>+<kbd>⇧</kbd>+<kbd>P</kbd> on Windows/Linux)
+3. Type "Package Control: Install Package" and press Enter
+4. Type "Claudette" and press Enter to install
+5. Get an API key from [Anthropic](https://console.anthropic.com/)
+6. Configure API key in *Preferences > Package Settings > Claudette > Settings*
 
-## Privacy & Legal
+## Privacy & legal
 
-Note that this package interacts with the Anthropic Claude API and thus the code that you share with the API will be sent to Anthropic's servers. For information about Anthropic's privacy practices, data processing, and legal compliance, please visit the [Privacy & Legal documentation](https://support.anthropic.com/en/collections/4078534-privacy-legal).
+Note that this package interacts directly with the Anthropic Claude API. All code that you share via the API, e.g. by including it in a chat, will be sent to Anthropic's servers. For information about Anthropic's privacy practices, data processing, and legal compliance, please visit the [Privacy & Legal documentation](https://support.anthropic.com/en/collections/4078534-privacy-legal).
 
 ## Credits
 
-The package is for the most part written by Claude AI itself!
+The package is for the most part written by Claude AI itself.

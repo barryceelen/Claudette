@@ -74,6 +74,7 @@
 								"command": "edit_settings",
 								"args": {
 									"base_file": "${packages}/Claudette/Claudette.sublime-settings",
+									"default": "{\n\t$0\n}\n"
 								}
 							}
 						]

@@ -1,42 +1,50 @@
 [
 	{
-		"caption": "Claude: Ask Question",
+		"caption": "Claudette: Ask Question",
 		"command": "claudette_ask_question"
 	},
 	{
-		"caption": "Claude: Ask Question In New Chat View",
+		"caption": "Claudette: Ask Question In New Chat View",
 		"command": "claudette_ask_new_question"
 	},
 	{
-		"caption": "Claude: Clear Chat History",
+		"caption": "Claudette: Clear Chat History",
 		"command": "claudette_clear_chat_history"
 	},
 	{
-		"caption": "Claude: Export Chat History",
+		"caption": "Claudette: Export Chat History",
 		"command": "claudette_export_chat_history"
 	},
 	{
-		"caption": "Claude: Import Chat History",
+		"caption": "Claudette: Import Chat History",
 		"command": "claudette_import_chat_history"
 	},
 	{
-		"caption": "Claude: Switch Model",
+		"caption": "Claudette: Switch Model",
 		"command": "claudette_select_model_panel"
 	},
 	{
-		"caption": "Claude: Switch System Prompt",
+		"caption": "Claudette: Switch System Prompt",
 		"command": "claudette_select_system_message_panel"
 	},
 	{
-		"caption": "Claude: Repomix Run",
+		"caption": "Claudette: Settings",
+		"command": "edit_settings",
+		"args": {
+			"base_file": "${packages}/Claudette/Claudette.sublime-settings",
+			"default": "{\n\t$0\n}\n"
+		}
+	},
+	{
+		"caption": "Claudette: Repomix Run",
 		"command": "claudette_run_repomix"
 	},
 	{
-		"caption": "Claude: Repomix Show Content",
+		"caption": "Claudette: Repomix Show Content",
 		"command": "claudette_show_repomix"
 	},
 	{
-		"caption": "Claude: Repomix Clear Content",
+		"caption": "Claudette: Repomix Clear Content",
 		"command": "claudette_clear_repomix"
-	},
+	}
 ]
