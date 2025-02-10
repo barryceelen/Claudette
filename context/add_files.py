@@ -2,7 +2,6 @@ import sublime
 import sublime_plugin
 import os
 from .file_handler import ClaudetteFileHandler
-
 from ..utils import claudette_chat_status_message
 
 class ClaudetteContextAddFilesCommand(sublime_plugin.WindowCommand):
