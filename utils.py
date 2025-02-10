@@ -37,11 +37,11 @@ def claudette_chat_status_message(window, message: str, prefix: str = "ℹ️") 
     })
     current_chat_view.set_read_only(True)
 
-def estimate_api_tokens(text):
+def claudette_estimate_api_tokens(text):
     """Estimate Claude API tokens based on character count (rough approximation)."""
     return len(text) // 4
 
-def detect_encoding(sample):
+def claudette_detect_encoding(sample):
     """
     Detect file encoding using BOMs and content analysis.
     Similar to how Sublime Text handles encodings.
@@ -65,7 +65,7 @@ def detect_encoding(sample):
     except UnicodeDecodeError:
         return 'latin-1'  # Fallback encoding
 
-def is_text_file(file_path, sample_size=4096, max_size=1024*1024*10):
+def claudette_is_text_file(file_path, sample_size=4096, max_size=1024*1024*10):
     """
     More complete implementation of Sublime Text's text file detection.
 
@@ -98,7 +98,7 @@ def is_text_file(file_path, sample_size=4096, max_size=1024*1024*10):
                 return False, None, "Binary file (contains NULL bytes)"
 
         # Encoding detection
-        encoding = detect_encoding(sample)
+        encoding = claudette_detect_encoding(sample)
 
         # Verification check
         try:

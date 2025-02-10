@@ -1,7 +1,7 @@
 import sublime
 import sublime_plugin
 import os
-from .file_handler import FileHandler
+from .file_handler import ClaudetteFileHandler
 
 from ..utils import claudette_chat_status_message
 
@@ -14,7 +14,7 @@ class ClaudetteContextAddFilesCommand(sublime_plugin.WindowCommand):
         if not chat_view:
             return
 
-        file_handler = FileHandler()
+        file_handler = ClaudetteFileHandler()
         file_handler.files = chat_view.settings().get('claudette_context_files', {})
 
         # Ensure paths is always a list
