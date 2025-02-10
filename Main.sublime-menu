@@ -55,6 +55,23 @@
 								"command": "claudette_import_chat_history"
 							}
 						]
+					},
+					{
+						"caption": "Chat Context",
+						"children": [
+							{
+								"caption": "Show Included Files",
+								"command": "claudette_context_manage_files"
+							},
+							{
+								"caption": "Add Files In Open Tabs to Context",
+								"command": "claudette_context_add_open_files"
+							},
+							{
+								"caption": "Clear Included Files",
+								"command": "claudette_context_clear_files"
+							}
+						]
 					}
 				]
 			}

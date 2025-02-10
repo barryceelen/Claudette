@@ -32,6 +32,10 @@
 		"command": "claudette_context_manage_files"
 	},
 	{
+		"caption": "Claudette: Add Files In Open Tabs to Context",
+		"command": "claudette_context_add_open_files"
+	},
+	{
 		"caption": "Claudette: Settings",
 		"command": "edit_settings",
 		"args": {

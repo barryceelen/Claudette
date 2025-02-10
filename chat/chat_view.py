@@ -23,7 +23,7 @@ class ClaudetteChatViewListener(sublime_plugin.ViewEventListener):
         return settings.get('claudette_is_chat_view', False)
 
     def on_text_command(self, command_name, args):
-        """Handle text commands for chat views."""
+        """Handle enter key."""
         if command_name == "insert" and args.get("characters") == "\n":
             try:
                 window = self.view.window()
