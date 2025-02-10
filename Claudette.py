@@ -12,6 +12,7 @@ from .chat.chat_view import ClaudetteChatViewListener
 from .chat.ask_question import ClaudetteAskQuestionCommand, ClaudetteAskNewQuestionCommand
 from .chat.chat_history import ClaudetteClearChatHistoryCommand, ClaudetteExportChatHistoryCommand, ClaudetteImportChatHistoryCommand
 from .context.add_files import ClaudetteContextAddFilesCommand
+from .context.add_open_files import ClaudetteContextAddOpenFilesCommand
 from .context.clear_files import ClaudetteContextClearFilesCommand
 from .context.manage_files import ClaudetteContextManageFilesCommand
 from .settings.select_model_panel import ClaudetteSelectModelPanelCommand
