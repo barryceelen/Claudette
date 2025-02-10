@@ -8,7 +8,11 @@ class FileHandler:
     def process_file(self, file_path, root_folder):
         """Process a single file and extract its symbols using Sublime's indexing."""
         try:
-            if not is_text_file(file_path):
+
+            is_text, encoding, reason = is_text_file(file_path)
+
+            if not is_text:
+                print(reason)
                 return None
 
             relative_path = os.path.relpath(file_path, root_folder)
