@@ -32,7 +32,7 @@
 		"command": "claudette_context_manage_files"
 	},
 	{
-		"caption": "Claudette: Add Files In Open Tabs to Context",
+		"caption": "Claudette: Add All Open Files To Context",
 		"command": "claudette_context_add_open_files"
 	},
 	{
