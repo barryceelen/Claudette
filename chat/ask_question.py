@@ -170,8 +170,9 @@ class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
 
             thread = threading.Thread(
                 target=api.stream_response,
-                args=(handler.append_chunk, conversation)
+                args=(handler.append_chunk, conversation, self.chat_view.view)
             )
+
             thread.start()
 
         except Exception as e:

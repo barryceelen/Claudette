@@ -2,12 +2,14 @@
 	// Your Anthropic API key from https://console.anthropic.com/settings/keys
 	"api_key": "",
 	"max_tokens": "200000",
-	// Note that a 'Switch Model' command exists that allows you to select the model via the command palette.
+	// Note that a 'Switch Model' command exists that allows you to select the
+	// model via the command palette.
 	//
 	// https://docs.anthropic.com/en/docs/about-claude/models#model-comparison-table
-	"model": "claude-3-opus-latest",
-	// The system message is added when the first request is sent to the Anthropic API.
-	// If an empty system message is selected as the default_system_message_index, no system message will be sent.
+	"model": "claude-3-sonnet-latest",
+	// The system message is added when the first request is sent to the
+	// Anthropic API. If an empty system message is selected as the
+	// default_system_message_index, no system message will be sent.
 	"system_messages": [
 		"You are a helpful AI assistant focused on programming help.",
 		"You are a helpful AI assistant focused on writing and documentation.",
@@ -15,10 +17,32 @@
 	],
 	"temperature": "1.0",
 	"default_system_message_index": 0,
+	// Claude pricing per 1K tokens (as of February 2025)
+	"pricing": {
+		"haiku": {
+			"input": 0.0008,
+			"output": 0.004,
+			"cache_write": 0.001,
+			"cache_read": 0.00008
+		},
+		"opus": {
+			"input": 0.015,
+			"output": 0.075,
+			"cache_write": 0.01875,
+			"cache_read": 0.0015
+		},
+		"sonnet": {
+			"input": 0.003,
+			"output": 0.015,
+			"cache_write": 0.00375,
+			"cache_read": 0.0003
+		},
+	},
 	"chat": {
 		"line_numbers": false,
 		"rulers": false,
-		// If set_scratch is set to true, the chat view will be closed without prompting to save.
+		// If set_scratch is set to true, the chat view will be closed without
+		// prompting to save.
 		"set_scratch": true
 	}
 }
