@@ -1,7 +1,7 @@
 import sublime
 import time
 
-class Spinner:
+class ClaudetteSpinner:
     def __init__(self):
         """Initialize the spinner with default values."""
         self.spinner_chars = [".  ", ".. ", "...", "   "]

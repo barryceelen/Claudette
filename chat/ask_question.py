@@ -2,8 +2,8 @@ import sublime
 import sublime_plugin
 import threading
 from ..constants import PLUGIN_NAME, SETTINGS_FILE
-from ..api.api import ClaudeAPI
-from ..api.handler import StreamingResponseHandler
+from ..api.api import ClaudetteClaudeAPI
+from ..api.handler import ClaudetteStreamingResponseHandler
 from .chat_view import ClaudetteChatView
 
 class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
@@ -150,7 +150,7 @@ class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
             if self.chat_view.get_size() > 0:
                 self.chat_view.focus()
 
-            api = ClaudeAPI()
+            api = ClaudetteClaudeAPI()
 
             message_start = self.chat_view.view.size()
 
@@ -162,7 +162,7 @@ class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
                 self.chat_view.handle_response(response_text)
                 self.chat_view.on_streaming_complete()
 
-            handler = StreamingResponseHandler(
+            handler = ClaudetteStreamingResponseHandler(
                 view=self.chat_view.view,
                 chat_view=self.chat_view,
                 on_complete=on_complete
@@ -178,7 +178,6 @@ class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
         except Exception as e:
             print(f"{PLUGIN_NAME} Error sending to Claude: {str(e)}")
             sublime.error_message(f"{PLUGIN_NAME} Error: Could not send message")
-
 
 class ClaudetteAskNewQuestionCommand(sublime_plugin.TextCommand):
     def run(self, edit):
