@@ -4,9 +4,7 @@ import urllib.request
 import urllib.parse
 import urllib.error
 from ..statusbar.spinner import ClaudetteSpinner
-from ..constants import ANTHROPIC_VERSION, DEFAULT_MODEL, MAX_TOKENS, SETTINGS_FILE
-
-CACHE_SUPPORTED_MODEL_PREFIXES = { 'claude-3' }
+from ..constants import ANTHROPIC_VERSION, CACHE_SUPPORTED_MODEL_PREFIXES, DEFAULT_MODEL, MAX_TOKENS, SETTINGS_FILE
 
 class ClaudetteClaudeAPI:
     BASE_URL = 'https://api.anthropic.com/v1/'
