@@ -32,6 +32,14 @@
 		"command": "claudette_context_manage_files"
 	},
 	{
+		"caption": "Claudette: Add Current File To Context",
+		"command": "claudette_context_add_current_file"
+	},
+	{
+		"caption": "Claudette: Remove Current File From Context",
+		"command": "claudette_context_remove_current_file"
+	},
+	{
 		"caption": "Claudette: Add All Open Files To Context",
 		"command": "claudette_context_add_open_files"
 	},
