@@ -36,6 +36,10 @@
 		"command": "claudette_context_add_open_files"
 	},
 	{
+		"caption": "Claudette: Refresh Included Files",
+		"command": "claudette_context_refresh_files"
+	},
+	{
 		"caption": "Claudette: Settings",
 		"command": "edit_settings",
 		"args": {

@@ -51,6 +51,10 @@
 								"command": "claudette_context_add_open_files"
 							},
 							{
+								"caption": "Refresh Included Files",
+								"command": "claudette_context_refresh_files"
+							},
+							{
 								"caption": "Clear Included Files",
 								"command": "claudette_context_clear_files"
 							}
