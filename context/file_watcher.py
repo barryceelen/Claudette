@@ -1,7 +1,7 @@
 import sublime
 import sublime_plugin
 import os
-from .file_handler import FileHandler
+from .file_handler import ClaudetteFileHandler
 from time import time
 
 class ClaudetteContextFileWatcher(sublime_plugin.EventListener):
@@ -122,7 +122,7 @@ class ClaudetteContextFileWatcher(sublime_plugin.EventListener):
 
         for relative_path, file_info in context_files.items():
             if file_info['absolute_path'] == file_path:
-                file_handler = FileHandler()
+                file_handler = ClaudetteFileHandler()
                 file_handler.files = context_files
 
                 root_folder = file_path[:file_path.rindex(relative_path)]

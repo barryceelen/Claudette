@@ -22,7 +22,7 @@ from .context.file_watcher import ClaudetteContextFileWatcher
 from .settings.select_model_panel import ClaudetteSelectModelPanelCommand
 from .settings.select_system_message_panel import ClaudetteSelectSystemMessagePanelCommand
 
-from .statusbar.spinner import Spinner
+from .statusbar.spinner import ClaudetteSpinner
 
 def plugin_loaded():
     spinner = ClaudetteSpinner()

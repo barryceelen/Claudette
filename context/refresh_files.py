@@ -1,7 +1,7 @@
 import sublime
 import sublime_plugin
 import os
-from .file_handler import FileHandler
+from .file_handler import ClaudetteFileHandler
 
 class ClaudetteContextRefreshFilesCommand(sublime_plugin.WindowCommand):
     def run(self):
@@ -19,8 +19,8 @@ class ClaudetteContextRefreshFilesCommand(sublime_plugin.WindowCommand):
                 if not context_files:
                     continue
 
-                file_handler = FileHandler()
-                file_handler.files = {}  # Start with empty dict to only keep valid files
+                file_handler = ClaudetteFileHandler()
+                file_handler.files = {} # Start with empty dict to only keep valid files
 
                 view_updated_count = 0
                 view_removed_count = 0
