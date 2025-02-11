@@ -5,12 +5,11 @@ from .file_handler import ClaudetteFileHandler
 from time import time
 
 class ClaudetteContextFileWatcher(sublime_plugin.EventListener):
+    """Very basic file watcher."""
     last_update = 0
-    pending_renames = {}  # Store pending rename operations
 
     def on_post_save_async(self, view):
         """Called asynchronously after any view is saved"""
-        print(f"ClaudetteContextFileWatcher: File saved: {view.file_name()}")
         settings = sublime.load_settings('Claudette.sublime-settings')
         if not settings.get('chat.context.auto_update_files', True):
             return
@@ -32,7 +31,7 @@ class ClaudetteContextFileWatcher(sublime_plugin.EventListener):
                 self._update_file_if_in_context(chat_view, file_path)
 
     def on_post_window_command(self, window, command_name, args):
-        """Handle file moves, renames, and deletions"""
+        """Handle file deletions"""
         if command_name in ('delete_file', 'side_bar_delete'):
             self._handle_file_deletion(window, args)
 
