@@ -6,6 +6,7 @@ from time import time
 
 class ClaudetteContextFileWatcher(sublime_plugin.EventListener):
     last_update = 0
+    pending_renames = {}  # Store pending rename operations
 
     def on_post_save_async(self, view):
         """Called asynchronously after any view is saved"""
@@ -23,7 +24,6 @@ class ClaudetteContextFileWatcher(sublime_plugin.EventListener):
         if not file_path:
             return
 
-        # Check all chat views for this file
         for window in sublime.windows():
             for chat_view in window.views():
                 if not chat_view.settings().get('claudette_is_chat_view', False):
@@ -31,54 +31,10 @@ class ClaudetteContextFileWatcher(sublime_plugin.EventListener):
 
                 self._update_file_if_in_context(chat_view, file_path)
 
-    def on_window_command(self, window, command_name, args):
+    def on_post_window_command(self, window, command_name, args):
         """Handle file moves, renames, and deletions"""
-        print(f"ClaudetteContextFileWatcher: Window command: {command_name}, args: {args}")
-        if command_name in ('rename_path', 'side_bar_rename', 'rename_file'):
-            self._handle_file_move(window, args)
-        elif command_name in ('delete_file', 'side_bar_delete'):
+        if command_name in ('delete_file', 'side_bar_delete'):
             self._handle_file_deletion(window, args)
-
-    def _handle_file_move(self, window, args):
-        """Handle file move and rename operations"""
-        old_path = args.get('old_path') or args.get('from')
-        new_path = args.get('new_path') or args.get('to')
-
-        if not (old_path and new_path):
-            return
-
-        # Update file in all chat views
-        for chat_view in window.views():
-            if not chat_view.settings().get('claudette_is_chat_view', False):
-                continue
-
-            context_files = chat_view.settings().get('claudette_context_files', {})
-            updated = False
-            updated_files = {}
-
-            for relative_path, file_info in context_files.items():
-                abs_path = file_info['absolute_path']
-
-                if abs_path == old_path:
-                    if not os.path.exists(new_path):
-                        continue
-
-                    file_info['absolute_path'] = new_path
-                    try:
-                        new_relative_path = os.path.relpath(
-                            new_path,
-                            os.path.dirname(new_path)
-                        )
-                        updated_files[new_relative_path] = file_info
-                        updated = True
-                    except ValueError:
-                        updated_files[relative_path] = file_info
-                else:
-                    updated_files[relative_path] = file_info
-
-            if updated:
-                chat_view.settings().set('claudette_context_files', updated_files)
-                sublime.status_message(f"Updated moved file in chat context")
 
     def _handle_file_deletion(self, window, args):
         """Handle file deletion operations"""
