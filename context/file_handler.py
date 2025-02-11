@@ -1,7 +1,7 @@
 import os
-from ..utils import estimate_api_tokens, is_text_file
+from ..utils import claudette_estimate_api_tokens, claudette_is_text_file
 
-class FileHandler:
+class ClaudetteFileHandler:
     def __init__(self):
         self.files = {}
 
@@ -9,7 +9,7 @@ class FileHandler:
         """Process a single file and extract its symbols using Sublime's indexing."""
         try:
 
-            is_text, encoding, reason = is_text_file(file_path)
+            is_text, encoding, reason = claudette_is_text_file(file_path)
 
             if not is_text:
                 print(reason)
@@ -27,7 +27,7 @@ class FileHandler:
 
             self.files[relative_path] = {
                 'content': file_content,
-                'api_tokens': estimate_api_tokens(file_content),
+                'api_tokens': claudette_estimate_api_tokens(file_content),
                 'absolute_path': file_path
             }
 

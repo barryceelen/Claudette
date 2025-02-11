@@ -25,7 +25,7 @@ from .settings.select_system_message_panel import ClaudetteSelectSystemMessagePa
 from .statusbar.spinner import Spinner
 
 def plugin_loaded():
-    spinner = Spinner()
+    spinner = ClaudetteSpinner()
     spinner.start("Claudette", 1000)
 
 class ClaudetteFocusListener(sublime_plugin.EventListener):

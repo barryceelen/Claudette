@@ -1,7 +1,7 @@
 import sublime
 import time
 
-class Spinner:
+class ClaudetteSpinner:
     def __init__(self):
         """Initialize the spinner with default values."""
         self.spinner_chars = [".  ", ".. ", "...", "   "]
@@ -31,15 +31,12 @@ class Spinner:
         """Stop the spinner and clean up."""
         self.active = False
 
-        # Clear the timer if it exists
         if self.timer:
             sublime.set_timeout_async(self.timer, 0)
             self.timer = None
 
-        # Ensure the status message is cleared
         sublime.set_timeout_async(lambda: sublime.status_message(""), 0)
 
-        # Reset internal state
         self.message = ""
         self.current_index = 0
         self.start_time = None
@@ -50,20 +47,16 @@ class Spinner:
         if not self.active:
             return
 
-        # Check if duration has elapsed
         if self.duration is not None:
             elapsed_time = (time.time() - self.start_time) * 1000  # Convert to milliseconds
             if elapsed_time >= self.duration:
                 self.stop()
                 return
 
-        # Update spinner frame
         spinner = self.spinner_chars[self.current_index]
         self.current_index = (self.current_index + 1) % len(self.spinner_chars)
         status = f"{self.message}{spinner}"
 
-        # Update status message
         sublime.set_timeout_async(lambda: sublime.status_message(status), 0)
 
-        # Schedule next update
         self.timer = sublime.set_timeout_async(self.update_spinner, 250)
