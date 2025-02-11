@@ -18,7 +18,7 @@ class ClaudetteFileHandler:
             relative_path = os.path.relpath(file_path, root_folder)
 
             if relative_path in self.files:
-                return None
+                print(f"Updating file in context: {file_path}")
 
             file_content = ''
 
