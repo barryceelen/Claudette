@@ -44,9 +44,21 @@ Import a chat history JSON file and continue the conversation where it left off.
 *claudette\_context\_add\_files*  
 Available as a context menu item in the file list. Include on or more files or the content of a folder to the chat context.
 
-- **Add Files In Open Tabs to Context**  
+- **Add Current File To Context**  
+*claudette\_context\_add\_current\_file*  
+Add the content of the currently open view to the chat context.
+
+- **Remove Current File From Context**  
+*claudette\_context\_add\_current\_file*  
+Remove the content of the currently open view to the chat context, if it has been added before.
+
+- **Add All Open Files To Context**  
 *claudette\_context\_add\_open\_files*  
 Add the content of the currently open files to the chat context.
+
+- **Refresh Included Files**  
+*claudette\_context\_refresh\_files*  
+Update the content of the files in the chat context with their latest version.
 
 - **Show Included Files**  
 *claudette\_context\_manage\_files*  

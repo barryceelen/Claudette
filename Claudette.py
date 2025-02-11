@@ -13,6 +13,7 @@ from .chat.ask_question import ClaudetteAskQuestionCommand, ClaudetteAskNewQuest
 from .chat.chat_history import ClaudetteClearChatHistoryCommand, ClaudetteExportChatHistoryCommand, ClaudetteImportChatHistoryCommand
 
 from .context.add_files import ClaudetteContextAddFilesCommand
+from .context.add_current_file import ClaudetteContextAddCurrentFileCommand, ClaudetteContextRemoveCurrentFileCommand
 from .context.add_open_files import ClaudetteContextAddOpenFilesCommand
 from .context.clear_files import ClaudetteContextClearFilesCommand
 from .context.manage_files import ClaudetteContextManageFilesCommand
