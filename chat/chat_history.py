@@ -7,7 +7,7 @@ from ..utils import claudette_chat_status_message
 from .ask_question import ClaudetteAskQuestionCommand
 from .chat_view import ClaudetteChatView
 
-def get_cache_path():
+def claudette_get_cache_path():
     """Get the path to the cache file"""
     cache_dir = os.path.join(sublime.cache_path(), PLUGIN_NAME)
     if not os.path.exists(cache_dir):
@@ -16,7 +16,7 @@ def get_cache_path():
 
 def get_last_directory():
     """Get the last used directory from cache"""
-    cache_path = get_cache_path()
+    cache_path = claudette_get_cache_path()
     try:
         if os.path.exists(cache_path):
             with open(cache_path, 'r', encoding='utf-8') as f:
@@ -27,16 +27,16 @@ def get_last_directory():
         print(f"{PLUGIN_NAME} Error reading cache: {str(e)}")
     return os.path.expanduser("~")
 
-def save_last_directory(path):
+def claudette_save_last_directory(path):
     """Save the last used directory to cache"""
-    cache_path = get_cache_path()
+    cache_path = claudette_get_cache_path()
     try:
         with open(cache_path, 'w', encoding='utf-8') as f:
             f.write(path)
     except Exception as e:
         print(f"{PLUGIN_NAME} Error saving to cache: {str(e)}")
 
-def get_current_directory(window):
+def claudette_get_current_directory(window):
     """Helper function to get the directory of the current view or last used directory"""
     last_dir = get_last_directory()
     view = window.active_view()
@@ -44,7 +44,7 @@ def get_current_directory(window):
         return os.path.dirname(view.file_name())
     return last_dir
 
-def validate_and_sanitize_message(message):
+def claudette_validate_and_sanitize_message(message):
     """Validate a single message object and remove disallowed items"""
     if not isinstance(message, dict):
         return False
@@ -72,7 +72,7 @@ class ClaudetteImportChatHistoryCommand(sublime_plugin.WindowCommand):
     def run(self):
         try:
             file_types = [("JSON", ["json"])]
-            directory = get_current_directory(self.window)
+            directory = claudette_get_current_directory(self.window)
 
             sublime.open_dialog(
                 self.load_history,
@@ -90,7 +90,7 @@ class ClaudetteImportChatHistoryCommand(sublime_plugin.WindowCommand):
             return
 
         try:
-            save_last_directory(path)
+            claudette_save_last_directory(path)
 
             # Read and validate the JSON file
             with open(path, 'r', encoding='utf-8') as f:
@@ -103,7 +103,7 @@ class ClaudetteImportChatHistoryCommand(sublime_plugin.WindowCommand):
             if not isinstance(messages, list):
                 raise ValueError("Messages must be a list")
 
-            valid_messages = [msg for msg in messages if validate_and_sanitize_message(msg)]
+            valid_messages = [msg for msg in messages if claudette_validate_and_sanitize_message(msg)]
             if not valid_messages:
                 raise ValueError("No valid messages found in import file")
 
@@ -177,7 +177,7 @@ class ClaudetteExportChatHistoryCommand(sublime_plugin.WindowCommand):
                 return
 
             file_types = [("JSON", ["json"])]
-            directory = get_current_directory(self.window)
+            directory = claudette_get_current_directory(self.window)
 
             sublime.save_dialog(
                 self.save_history,
@@ -195,7 +195,7 @@ class ClaudetteExportChatHistoryCommand(sublime_plugin.WindowCommand):
             return
 
         try:
-            save_last_directory(path)
+            claudette_save_last_directory(path)
 
             export_data = {
                 'messages': self.messages

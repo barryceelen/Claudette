@@ -1,6 +1,5 @@
 import sublime
 import sublime_plugin
-
 from ..utils import claudette_chat_status_message
 
 class ClaudetteContextManageFilesCommand(sublime_plugin.WindowCommand):

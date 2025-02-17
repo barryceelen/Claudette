@@ -1,4 +1,4 @@
-class StreamingResponseHandler:
+class ClaudetteStreamingResponseHandler:
     def __init__(self, view, chat_view, on_complete=None):
         self.view = view
         self.chat_view = chat_view

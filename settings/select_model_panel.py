@@ -1,6 +1,6 @@
 import sublime
 import sublime_plugin
-from ..api.api import ClaudeAPI
+from ..api.api import ClaudetteClaudeAPI
 from ..constants import SETTINGS_FILE
 
 class ClaudetteSelectModelPanelCommand(sublime_plugin.WindowCommand):
@@ -15,7 +15,7 @@ class ClaudetteSelectModelPanelCommand(sublime_plugin.WindowCommand):
         return True
 
     def run(self):
-        api = ClaudeAPI()
+        api = ClaudetteClaudeAPI()
         settings = sublime.load_settings(SETTINGS_FILE)
         current_model = settings.get('model')
         models = api.fetch_models()

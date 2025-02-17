@@ -10,6 +10,7 @@ Type "Ask Question" in the command palette or find the *Claudette > Ask Question
 
 - Chat with Claude in multiple chat windows at the same time
 - Automatically include selected text as context for your questions
+- Include one or more files in the chat context
 - Choose between different Claude [models](https://docs.anthropic.com/en/docs/about-claude/models)
 - Configure custom [system prompts](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/system-prompts) to customize Claude's behavior
 - Chat History: Export and import conversations as JSON files
@@ -38,6 +39,34 @@ Save any Claude chat conversation. Run this command to export the most recently 
 - **Import Chat History**  
 *claudette\_export\_chat\_history*  
 Import a chat history JSON file and continue the conversation where it left off.
+
+- **Include in Context**  
+*claudette\_context\_add\_files*  
+Available as a context menu item in the file list. Include on or more files or the content of a folder to the chat context.
+
+- **Add Current File To Context**  
+*claudette\_context\_add\_current\_file*  
+Add the content of the currently open view to the chat context.
+
+- **Remove Current File From Context**  
+*claudette\_context\_add\_current\_file*  
+Remove the content of the currently open view to the chat context, if it has been added before.
+
+- **Add All Open Files To Context**  
+*claudette\_context\_add\_open\_files*  
+Add the content of the currently open files to the chat context.
+
+- **Refresh Included Files**  
+*claudette\_context\_refresh\_files*  
+Update the content of the files in the chat context with their latest version.
+
+- **Show Included Files**  
+*claudette\_context\_manage\_files*  
+Manage the list of files that are currently included in the chat context.
+
+- **Clear Included Files**  
+*claudette\_context\_clear\_files*  
+Remove all included files from the chat context.
 
 - **Switch Model**  
 *claudette\_select\_model\_panel*  

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from ..constants import PLUGIN_NAME
 
 @dataclass
-class CodeBlock:
+class ClaudetteCodeBlock:
     """Represents a code block found in the chat content."""
     content: str
     start_pos: int
@@ -255,7 +255,7 @@ class ClaudetteChatView:
             print(f"{PLUGIN_NAME} Error copying to clipboard: {str(e)}")
             sublime.status_message("Error copying code to clipboard")
 
-    def find_code_blocks(self, content: str) -> List[CodeBlock]:
+    def find_code_blocks(self, content: str) -> List[ClaudetteCodeBlock]:
         """Find all code blocks in the content."""
         blocks = []
         pattern = r"```([\w+]*)\n(.*?)\n```"
@@ -263,7 +263,7 @@ class ClaudetteChatView:
         for match in re.finditer(pattern, content, re.DOTALL):
             language = match.group(1).strip()
             content = match.group(2).strip()
-            blocks.append(CodeBlock(
+            blocks.append(ClaudetteCodeBlock(
                 content=content,
                 start_pos=match.start(),
                 end_pos=match.end(),

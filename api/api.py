@@ -4,12 +4,10 @@ import json
 import urllib.request
 import urllib.parse
 import urllib.error
-from ..statusbar.spinner import Spinner
-from ..constants import ANTHROPIC_VERSION, DEFAULT_MODEL, MAX_TOKENS, SETTINGS_FILE
+from ..statusbar.spinner import ClaudetteSpinner
+from ..constants import ANTHROPIC_VERSION, CACHE_SUPPORTED_MODEL_PREFIXES, DEFAULT_MODEL, MAX_TOKENS, SETTINGS_FILE
 
-CACHE_SUPPORTED_MODEL_PREFIXES = { 'claude-3' }
-
-class ClaudeAPI:
+class ClaudetteClaudeAPI:
     BASE_URL = 'https://api.anthropic.com/v1/'
 
     def __init__(self):
@@ -21,7 +19,7 @@ class ClaudeAPI:
         self.session_cost = 0.0
         self.session_input_tokens = 0
         self.session_output_tokens = 0
-        self.spinner = Spinner()
+        self.spinner = ClaudetteSpinner()
         self.pricing = self.settings.get('pricing')
 
     @staticmethod
