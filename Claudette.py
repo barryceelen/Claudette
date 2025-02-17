@@ -18,7 +18,6 @@ from .context.add_open_files import ClaudetteContextAddOpenFilesCommand
 from .context.clear_files import ClaudetteContextClearFilesCommand
 from .context.manage_files import ClaudetteContextManageFilesCommand
 from .context.refresh_files import ClaudetteContextRefreshFilesCommand
-from .context.file_watcher import ClaudetteContextFileWatcher
 
 from .settings.select_model_panel import ClaudetteSelectModelPanelCommand
 from .settings.select_system_message_panel import ClaudetteSelectSystemMessagePanelCommand
