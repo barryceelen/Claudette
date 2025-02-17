@@ -39,6 +39,9 @@
 		},
 	},
 	"chat": {
+		// If a file has been added to the chat content, automatically update
+		// the chat content if the file is updated.
+		"context_auto_update_files": true,
 		"line_numbers": false,
 		"rulers": false,
 		// If set_scratch is set to true, the chat view will be closed without
