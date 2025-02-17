@@ -28,10 +28,6 @@
 		"command": "claudette_select_system_message_panel"
 	},
 	{
-		"caption": "Claudette: Show Included Files",
-		"command": "claudette_context_manage_files"
-	},
-	{
 		"caption": "Claudette: Add Current File To Context",
 		"command": "claudette_context_add_current_file"
 	},
@@ -42,6 +38,14 @@
 	{
 		"caption": "Claudette: Add All Open Files To Context",
 		"command": "claudette_context_add_open_files"
+	},
+	{
+		"caption": "Claudette: Show Included Files",
+		"command": "claudette_context_manage_files"
+	},
+	{
+		"caption": "Claudette: Refresh Included Files",
+		"command": "claudette_context_refresh_files"
 	},
 	{
 		"caption": "Claudette: Settings",
