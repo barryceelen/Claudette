@@ -9,7 +9,6 @@ class ClaudetteContextRefreshFilesCommand(sublime_plugin.WindowCommand):
         updated_files = 0
         removed_files = 0
 
-        # Iterate through all windows and their views
         for window in sublime.windows():
             for chat_view in window.views():
                 if not chat_view.settings().get('claudette_is_chat_view', False):
@@ -20,7 +19,7 @@ class ClaudetteContextRefreshFilesCommand(sublime_plugin.WindowCommand):
                     continue
 
                 file_handler = ClaudetteFileHandler()
-                file_handler.files = {} # Start with empty dict to only keep valid files
+                file_handler.files = {}
 
                 view_updated_count = 0
                 view_removed_count = 0
@@ -45,7 +44,6 @@ class ClaudetteContextRefreshFilesCommand(sublime_plugin.WindowCommand):
                     if view_removed_count > 0:
                         removed_files += view_removed_count
 
-        # Build status message
         message_parts = []
 
         if updated_files > 0:
@@ -69,6 +67,6 @@ class ClaudetteContextRefreshFilesCommand(sublime_plugin.WindowCommand):
         for window in sublime.windows():
             for view in window.views():
                 if (view.settings().get('claudette_is_chat_view', False) and
-                    bool(view.settings().get('claudette_context_files', {}))):  # Check if dict is not empty
+                    bool(view.settings().get('claudette_context_files', {}))):
                     return True
         return False
