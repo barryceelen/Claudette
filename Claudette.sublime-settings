@@ -6,7 +6,7 @@
 	// model via the command palette.
 	//
 	// https://docs.anthropic.com/en/docs/about-claude/models#model-comparison-table
-	"model": "claude-3-sonnet-latest",
+	"model": "claude-3-5-sonnet-latest",
 	// The system message is added when the first request is sent to the
 	// Anthropic API. If an empty system message is selected as the
 	// default_system_message_index, no system message will be sent.
