@@ -48,6 +48,10 @@
 		"command": "claudette_context_refresh_files"
 	},
 	{
+		"caption": "Claudette: Clear Included Files",
+		"command": "claudette_context_clear_files"
+	},
+	{
 		"caption": "Claudette: Settings",
 		"command": "edit_settings",
 		"args": {
