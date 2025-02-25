@@ -201,6 +201,16 @@ class ClaudetteChatView:
                 self.phantom_sets[view_id].update([])
             if view_id in self.existing_button_positions:
                 self.existing_button_positions[view_id].clear()
+                
+    def display_command_result(self, command, result):
+        """Display the result of a slash command in the chat view."""
+        if not self.view:
+            return
+            
+        message = "\n\n" if self.get_size() > 0 else ""
+        message += f"## Command: /{command}\n\n{result}\n\n"
+        self.append_text(message)
+        self.focus()
 
     def on_streaming_complete(self) -> None:
         """Handle code blocks and phantom buttons when streaming is complete."""

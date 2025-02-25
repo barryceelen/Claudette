@@ -11,6 +11,7 @@ import sublime_plugin
 from .chat.chat_view import ClaudetteChatViewListener
 from .chat.ask_question import ClaudetteAskQuestionCommand, ClaudetteAskNewQuestionCommand
 from .chat.chat_history import ClaudetteClearChatHistoryCommand, ClaudetteExportChatHistoryCommand, ClaudetteImportChatHistoryCommand
+from .chat.slash_commands import slash_commands
 
 from .context.add_files import ClaudetteContextAddFilesCommand
 from .context.add_current_file import ClaudetteContextAddCurrentFileCommand, ClaudetteContextRemoveCurrentFileCommand

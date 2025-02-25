@@ -1,10 +1,12 @@
 import sublime
 import sublime_plugin
 import threading
+import re
 from ..constants import PLUGIN_NAME, SETTINGS_FILE
 from ..api.api import ClaudetteClaudeAPI
 from ..api.handler import ClaudetteStreamingResponseHandler
 from .chat_view import ClaudetteChatView
+from .slash_commands import slash_commands
 
 class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
     def __init__(self, view):
@@ -87,8 +89,27 @@ class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
                 "A Claude API key is required. Please add your API key via Package Settings > Claudette.\n"
             )
             return
-
-        self.send_to_claude(code, question.strip())
+            
+        # Check for slash commands
+        question = question.strip()
+        slash_command_match = re.match(r'^/(\w+)(?:\s+(.*))?$', question)
+        
+        if slash_command_match:
+            command = slash_command_match.group(1).lower()
+            args = slash_command_match.group(2)
+            args_list = args.split() if args else []
+            
+            handled, response = slash_commands.handle(command, self.chat_view, args_list)
+            
+            if handled:
+                if response:
+                    message = "\n\n" if self.chat_view.get_size() > 0 else ""
+                    message += f"## Command: /{command}\n\n{response}\n\n"
+                    self.chat_view.append_text(message)
+                    self.chat_view.focus()
+                return
+        
+        self.send_to_claude(code, question)
 
     def run(self, edit, code=None, question=None):
         try:
