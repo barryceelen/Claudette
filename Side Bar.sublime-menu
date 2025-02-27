@@ -14,7 +14,16 @@
 			{
 				"caption": "Clear Included Files",
 				"command": "claudette_context_clear_files"
-			}
+            },
+            {
+                "caption": "Repomix Run",
+                "command": "claudette_run_repomix",
+                "args": {"paths": []},
+            },
+            {
+                "caption": "Repomix Clear",
+                "command": "claudette_clear_repomix",
+            }
 		]
 	}
 ]
