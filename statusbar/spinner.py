@@ -47,8 +47,8 @@ class ClaudetteSpinner:
         if not self.active:
             return
 
-        if self.duration is not None:
-            elapsed_time = (time.time() - self.start_time) * 1000  # Convert to milliseconds
+        if self.duration is not None and self.start_time is not None:
+            elapsed_time = (time.time() - self.start_time) * 1000 # Convert to milliseconds
             if elapsed_time >= self.duration:
                 self.stop()
                 return
