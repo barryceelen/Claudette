@@ -25,9 +25,9 @@ def claudette_chat_status_message(window, message: str, prefix: str = "ℹ️") 
         return
 
     if current_chat_view.size() > 0:
-        message = f"\n\n{prefix} {message}\n"
+        message = f"\n\n{prefix + ' ' if prefix else ''}{message}\n"
     else:
-        message = f"{prefix} {message}\n"
+        message = f"{prefix + ' ' if prefix else ''}{message}\n"
 
     current_chat_view.set_read_only(False)
     current_chat_view.run_command('append', {
@@ -35,6 +35,12 @@ def claudette_chat_status_message(window, message: str, prefix: str = "ℹ️") 
         'force': True,
         'scroll_to_end': True
     })
+
+    # Move cursor to the end of the view
+    end_point = current_chat_view.size()
+    current_chat_view.sel().clear()
+    current_chat_view.sel().add(sublime.Region(end_point, end_point))
+
     current_chat_view.set_read_only(True)
 
 def claudette_estimate_api_tokens(text):
