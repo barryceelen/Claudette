@@ -12,6 +12,16 @@ class ClaudetteSelectApiKeyPanelCommand(sublime_plugin.WindowCommand):
     def is_visible(self):
         return True
 
+    def is_enabled(self):
+        settings = sublime.load_settings(SETTINGS_FILE)
+        api_key = settings.get('api_key')
+
+        # Check if the api_key is a dictionary containing keys, with at least two keys
+        return (isinstance(api_key, dict) and
+                api_key.get('keys') and
+                isinstance(api_key['keys'], list) and
+                len(api_key['keys']) > 1)
+
     def run(self):
         try:
             settings = sublime.load_settings(SETTINGS_FILE)
