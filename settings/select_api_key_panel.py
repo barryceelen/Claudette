@@ -1,7 +1,6 @@
 import sublime
 import sublime_plugin
 from ..constants import SETTINGS_FILE
-from ..utils import claudette_get_valid_api_keys
 
 class ClaudetteSelectApiKeyPanelCommand(sublime_plugin.WindowCommand):
     """
@@ -16,14 +15,20 @@ class ClaudetteSelectApiKeyPanelCommand(sublime_plugin.WindowCommand):
     def run(self):
         try:
             settings = sublime.load_settings(SETTINGS_FILE)
-            current_index = settings.get('default_api_key_index', 0)
-            api_keys = settings.get('api_keys', [])
-            valid_api_keys = claudette_get_valid_api_keys()
+            api_key = settings.get('api_key')
+            panel_items = []
 
-            panel_items = [[item['name']] for item in valid_api_keys]
+            if isinstance(api_key, str) and api_key.strip():
+                # We have a single key
+                panel_items.append(["Default"])
+            elif isinstance(api_key, dict) and api_key.get('keys') and isinstance(api_key['keys'], list):
+                for i, key_entry in enumerate(api_key['keys']):
+                    if isinstance(key_entry, dict) and key_entry.get('key'):
+                        name = key_entry.get('name', f"Untitled {i}" if i > 0 else "Untitled")
+                        panel_items.append([name])
 
-            # Add the appropriate settings item based on whether api_keys exist
-            settings_item = "→ Manage API keys" if valid_api_keys else "＋ Add new API key"
+            # Add the appropriate settings item based on whether api_key exists
+            settings_item = "→ Manage API keys" if panel_items else "＋ Add new API key"
             panel_items.append([settings_item])
 
             def on_select(index):
@@ -37,21 +42,22 @@ class ClaudetteSelectApiKeyPanelCommand(sublime_plugin.WindowCommand):
                         "default": "{\n\t$0\n}\n"
                     })
                 else:
-                    # Update the default API key index to match the filtered list
-                    api_keys = settings.get('api_keys', [])  # Get fresh copy in case it was updated
-                    selected_api_key = valid_api_keys[index]['api_key']
-                    settings.set('default_api_key_index', api_keys.index(selected_api_key))
-                    sublime.save_settings(SETTINGS_FILE)
-                    sublime.status_message(f"Switched to API key: {valid_api_keys[index]['name']}")
+                    if isinstance(api_key, str):
+                        # Nothing needed for a single API key.
+                        pass
+                    elif isinstance(api_key, dict) and api_key.get('keys'):
+                        updated_api_key = api_key.copy()
+                        updated_api_key['active_key'] = index
+                        settings.set('api_key', updated_api_key)
+                        sublime.save_settings(SETTINGS_FILE)
 
-            # Determine the correct selection index for the current API key
+                    sublime.status_message(f"Switched to API key: {panel_items[index][0]}")
+
             selection_index = 0
-            if current_index < len(api_keys):
-                current_api_key = api_keys[current_index]
-                for i, item in enumerate(valid_api_keys):
-                    if item['api_key'] == current_api_key:
-                        selection_index = i
-                        break
+            if isinstance(api_key, dict) and api_key.get('keys'):
+                current_index = api_key.get('default_index', 0)
+                if 0 <= current_index < len(panel_items) - 1:  # -1 for settings item
+                    selection_index = current_index
 
             self.window.show_quick_panel(
                 panel_items,

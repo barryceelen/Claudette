@@ -5,6 +5,7 @@ import urllib.parse
 import urllib.error
 from ..statusbar.spinner import ClaudetteSpinner
 from ..constants import ANTHROPIC_VERSION, CACHE_SUPPORTED_MODEL_PREFIXES, DEFAULT_MODEL, MAX_TOKENS, SETTINGS_FILE
+from ..utils import claudette_get_api_key_value
 
 class ClaudetteClaudeAPI:
     BASE_URL = 'https://api.anthropic.com/v1/'
@@ -12,7 +13,7 @@ class ClaudetteClaudeAPI:
     def __init__(self):
         self.settings = sublime.load_settings(SETTINGS_FILE)
         self.max_tokens = self.settings.get('max_tokens', MAX_TOKENS)
-        self.api_key = self._get_active_api_key()
+        self.api_key = claudette_get_api_key_value()
         self.model = self.settings.get('model', DEFAULT_MODEL)
         self.temperature = self.settings.get('temperature', '1.0')
         self.session_cost = 0.0
@@ -20,26 +21,6 @@ class ClaudetteClaudeAPI:
         self.session_output_tokens = 0
         self.spinner = ClaudetteSpinner()
         self.pricing = self.settings.get('pricing')
-
-    def _get_active_api_key(self):
-        """Get the currently active API key based on settings."""
-        api_keys = self.settings.get('api_keys', [])
-        default_index = self.settings.get('default_api_key_index', 0)
-
-        if api_keys and isinstance(api_keys, list):
-            # Try to get key at the selected index
-            if isinstance(default_index, int) and 0 <= default_index < len(api_keys):
-                api_key = api_keys[default_index]
-                if isinstance(api_key, dict) and api_key.get('api_key'):
-                    return api_key['api_key']
-
-            # If default index is invalid, fall back to first valid key
-            for api_key in api_keys:
-                if isinstance(api_key, dict) and api_key.get('api_key'):
-                    return api_key['api_key']
-
-        # Fall back to legacy api_key setting if there are no valid keys in the 'providers' setting
-        return self.settings.get('api_key')
 
     @staticmethod
     def get_valid_temperature(temp):
@@ -110,6 +91,10 @@ class ClaudetteClaudeAPI:
         if not messages or not any(msg.get('content', '').strip() for msg in messages):
             return
 
+        if not self.api_key:
+            handle_error(f"[Error] The API key is not set. Please check your API key configuration.")
+            return
+
         try:
             # Get model-specific token limit or default to 4096
             model_prefix = next((prefix for prefix in self.MODEL_MAX_TOKENS.keys()
@@ -173,7 +158,7 @@ class ClaudetteClaudeAPI:
                         }
 
                         if self.should_use_cache_control(self.model):
-                            system_message["cache_control"] = {"type": "ephemeral"}
+                            system_message.cache_control = {"type": "ephemeral"}
 
                         system_messages.append(system_message)
 
@@ -298,11 +283,11 @@ class ClaudetteClaudeAPI:
                 error_content = e.read().decode('utf-8')
                 print("Claude API Error Content:", error_content)
                 if e.code == 401:
-                    handle_error("[Error] {0}".format(str(e)))
+                    handle_error(f"[Error] Authentication failed for API key: {str(e)}")
                 else:
-                    handle_error("[Error] {0}".format(str(e)))
+                    handle_error(f"[Error] {str(e)}")
             except urllib.error.URLError as e:
-                handle_error("[Error] {0}".format(str(e)))
+                handle_error(f"[Error] {str(e)}")
             finally:
                 self.spinner.stop()
 
@@ -311,6 +296,11 @@ class ClaudetteClaudeAPI:
             self.spinner.stop()
 
     def fetch_models(self):
+
+        if not self.api_key:
+            sublime.error_message(f"The API key is undefined. Please check your API key configuration.")
+            return []
+
         try:
             sublime.status_message('Fetching models')
             headers = {
@@ -332,17 +322,17 @@ class ClaudetteClaudeAPI:
 
         except urllib.error.HTTPError as e:
             if e.code == 401:
-                print("Claude API: {0}".format(str(e)))
-                sublime.error_message("Authentication invalid when fetching the available models from the Claude API.")
+                print(f"Claude API: {str(e)}")
+                sublime.error_message(f"Authentication failed when fetching models from the Claude API.")
             else:
-                print("Claude API: {0}".format(str(e)))
-                sublime.error_message("An error occurred fetching the available models from the Claude API.")
+                print(f"Claude API: {str(e)}")
+                sublime.error_message(f"An error occurred fetching models from the Claude API.")
         except urllib.error.URLError as e:
-            print("Claude API: {0}".format(str(e)))
-            sublime.error_message("An error occurred fetching the available models from the Claude API.")
+            print(f"Claude API: {str(e)}")
+            sublime.error_message(f"Connection error fetching models from the Claude API.")
         except Exception as e:
-            print("Claude API: {0}".format(str(e)))
-            sublime.error_message("An error occurred fetching the available models from the Claude API.")
+            print(f"Claude API: {str(e)}")
+            sublime.error_message(f"An unexpected error occurred fetching models from the Claude API.")
         finally:
             sublime.status_message('')
 

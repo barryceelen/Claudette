@@ -1,22 +1,29 @@
 {
-	// API key configuration. Note that the legacy singular 'api_key' setting is
-	// deprecated. For existing Claudette users the 'api_key' setting will
-	// continue to work.
+	// API key configuration. You can define a single key or multiple keys.
+	//
+	// Example for a single key:
+	//
+	// api_key: "your-key-here"
+	//
+	// Example for multiple keys:
+	//
+	// api_key: {
+	//     "keys": [
+	//         {
+	//             name: "Work",
+	//             key: "your-key-here"
+	//         },
+	//         {
+	//             name: "Private",
+	//             key: "your-key-here"
+	//         },
+	//     ],
+	//     "active_key": 0
+	// }
 	//
 	// https://console.anthropic.com/settings/keys
-	"api_keys": [
-		{
-			"name": "Default",
-			"api_key": ""
-		}
-		// Example for adding an additional api key:
-		// {
-		//     "name": "Personal Account",
-		//     "api_key": "your-api-key-here"
-		// }
-	],
-	// Index of the currently active provider in the providers setting.
-	"default_provider_index": 0,
+	//
+	"api_key": "",
 	"max_tokens": "200000",
 	// Note that a 'Switch Model' command exists that allows you to select the
 	// model via the command palette.

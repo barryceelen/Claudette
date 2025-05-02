@@ -119,50 +119,6 @@ def claudette_is_text_file(file_path, sample_size=4096, max_size=1024*1024*10):
     except IOError as e:
         return False, None, f"IO Error: {str(e)}"
 
-def claudette_get_valid_api_keys():
-    """
-    Get a list of valid API keys from settings.
-
-    Returns:
-        list: List of dictionaries with 'api_key' and 'name' keys
-    """
-    settings = sublime.load_settings(SETTINGS_FILE)
-
-    api_keys = settings.get('api_keys', [])
-    valid_api_keys = []
-    untitled_count = 0
-
-    for api_key in api_keys:
-        if isinstance(api_key, dict) and api_key.get('api_key'):
-            name = api_key.get('name')
-            if not name:
-                if untitled_count == 0:
-                    name = "Untitled"
-                else:
-                    name = f"Untitled {untitled_count}"
-                untitled_count += 1
-
-            valid_api_keys.append({
-                'api_key': api_key,
-                'name': name
-            })
-
-    # If no valid keys found, check for the legacy api_key setting
-    if not valid_api_keys and settings.has('api_key'):
-        legacy_key = settings.get('api_key')
-        if legacy_key:
-            new_api_key = {
-                'name': 'Default',
-                'key': legacy_key
-            }
-
-            valid_api_keys.append({
-                'api_key': new_api_key,
-                'name': 'Default'
-            })
-
-    return valid_api_keys
-
 def claudette_get_api_key():
     """
     Get the currently active API key.
@@ -171,24 +127,55 @@ def claudette_get_api_key():
         dict or None: The active API key as a dictionary with 'key' and 'name' fields,
                       or None if no valid key is available
     """
-
     settings = sublime.load_settings(SETTINGS_FILE)
-    valid_api_keys = claudette_get_valid_api_keys()
+    api_key = settings.get('api_key')
 
-    if not valid_api_keys:
-        return None
+    # For string API key, return a dict format
+    if isinstance(api_key, str) and api_key.strip():
+        return {'key': api_key, 'name': 'Default'}
 
-    # Try to get the API key from the current index
-    current_index = settings.get('default_api_key_index', 0)
-    api_keys = settings.get('api_keys', [])
+    # For dict with multiple keys, get the current one
+    elif isinstance(api_key, dict) and api_key.get('keys') and isinstance(api_key['keys'], list):
+        keys = api_key['keys']
+        current_index = api_key.get('default_index', 0)
 
-    # If there's a valid current index, find the corresponding key in our valid keys
-    if api_keys and 0 <= current_index < len(api_keys):
-        current_key = api_keys[current_index]
-        for key_info in valid_api_keys:
-            if key_info['api_key'] == current_key:
-                return current_key
+        # If there's a valid current index, return that key
+        if isinstance(current_index, int) and 0 <= current_index < len(keys):
+            key_entry = keys[current_index]
+            if isinstance(key_entry, dict) and key_entry.get('key'):
+                return key_entry
 
-    # If we couldn't find the current key or the index is invalid,
-    # return the first valid key
-    return valid_api_keys[0]['api_key']
+        # Otherwise return the first valid key
+        for key_entry in keys:
+            if isinstance(key_entry, dict) and key_entry.get('key'):
+                return key_entry
+
+    return None
+
+def claudette_get_api_key_value():
+    """
+    Extract the API key value from the API key dictionary.
+
+    Returns:
+        str: The API key value, or an empty string if not available
+    """
+    api_key = claudette_get_api_key()
+
+    if isinstance(api_key, dict):
+        return api_key.get('key', '')
+
+    return ''
+
+def claudette_get_api_key_name():
+    """
+    Get the API key name from the API key dictionary.
+
+    Returns:
+        str: The API key name, 'Default' if the key has no name, or 'Undefined'
+    """
+    api_key = claudette_get_api_key()
+
+    if isinstance(api_key, dict):
+        return api_key.get('name', 'Default')
+
+    return 'Undefined'
