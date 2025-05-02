@@ -11,8 +11,8 @@ class ClaudetteClaudeAPI:
 
     def __init__(self):
         self.settings = sublime.load_settings(SETTINGS_FILE)
-        self.api_key = self.settings.get('api_key')
         self.max_tokens = self.settings.get('max_tokens', MAX_TOKENS)
+        self.api_key = self._get_active_api_key()
         self.model = self.settings.get('model', DEFAULT_MODEL)
         self.temperature = self.settings.get('temperature', '1.0')
         self.session_cost = 0.0
@@ -20,6 +20,26 @@ class ClaudetteClaudeAPI:
         self.session_output_tokens = 0
         self.spinner = ClaudetteSpinner()
         self.pricing = self.settings.get('pricing')
+
+    def _get_active_api_key(self):
+        """Get the currently active API key based on settings."""
+        api_keys = self.settings.get('api_keys', [])
+        default_index = self.settings.get('default_api_key_index', 0)
+
+        if api_keys and isinstance(api_keys, list):
+            # Try to get key at the selected index
+            if isinstance(default_index, int) and 0 <= default_index < len(api_keys):
+                api_key = api_keys[default_index]
+                if isinstance(api_key, dict) and api_key.get('api_key'):
+                    return api_key['api_key']
+
+            # If default index is invalid, fall back to first valid key
+            for api_key in api_keys:
+                if isinstance(api_key, dict) and api_key.get('api_key'):
+                    return api_key['api_key']
+
+        # Fall back to legacy api_key setting if there are no valid keys in the 'providers' setting
+        return self.settings.get('api_key')
 
     @staticmethod
     def get_valid_temperature(temp):

@@ -1,6 +1,22 @@
 {
-	// Your Anthropic API key from https://console.anthropic.com/settings/keys
-	"api_key": "",
+	// API key configuration. Note that the legacy singular 'api_key' setting is
+	// deprecated. For existing Claudette users the 'api_key' setting will
+	// continue to work.
+	//
+	// https://console.anthropic.com/settings/keys
+	"api_keys": [
+		{
+			"name": "Default",
+			"api_key": ""
+		}
+		// Example for adding an additional api key:
+		// {
+		//     "name": "Personal Account",
+		//     "api_key": "your-api-key-here"
+		// }
+	],
+	// Index of the currently active provider in the providers setting.
+	"default_provider_index": 0,
 	"max_tokens": "200000",
 	// Note that a 'Switch Model' command exists that allows you to select the
 	// model via the command palette.
@@ -15,8 +31,9 @@
 		"You are a helpful AI assistant focused on writing and documentation.",
 		"You are a helpful AI assistant ready to help with any task.",
 	],
-	"temperature": "1.0",
+	// Index of the currently active system message in the system_messages setting.
 	"default_system_message_index": 0,
+	"temperature": "1.0",
 	// Claude pricing per 1K tokens (as of February 2025)
 	"pricing": {
 		"haiku": {
