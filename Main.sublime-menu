@@ -19,8 +19,12 @@
 						"command": "claudette_select_model_panel"
 					},
 					{
-						"caption": "Switch System Message",
+						"caption": "Switch System Prompt",
 						"command": "claudette_select_system_message_panel"
+					},
+					{
+						"caption": "Switch API Key",
+						"command": "claudette_select_api_key_panel"
 					},
 					{
 						"caption": "Chat History",

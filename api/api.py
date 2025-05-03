@@ -5,13 +5,14 @@ import urllib.parse
 import urllib.error
 from ..statusbar.spinner import ClaudetteSpinner
 from ..constants import ANTHROPIC_VERSION, CACHE_SUPPORTED_MODEL_PREFIXES, DEFAULT_MODEL, MAX_TOKENS, SETTINGS_FILE
+from ..utils import claudette_get_api_key_value
 
 class ClaudetteClaudeAPI:
     BASE_URL = 'https://api.anthropic.com/v1/'
 
     def __init__(self):
         self.settings = sublime.load_settings(SETTINGS_FILE)
-        self.api_key = self.settings.get('api_key')
+        self.api_key = claudette_get_api_key_value()
         self.max_tokens = self.settings.get('max_tokens', MAX_TOKENS)
         self.model = self.settings.get('model', DEFAULT_MODEL)
         self.temperature = self.settings.get('temperature', '1.0')
@@ -90,6 +91,10 @@ class ClaudetteClaudeAPI:
         if not messages or not any(msg.get('content', '').strip() for msg in messages):
             return
 
+        if not self.api_key:
+            handle_error(f"[Error] The API key is not set. Please check your API key configuration.")
+            return
+
         try:
             # Get model-specific token limit or default to 4096
             model_prefix = next((prefix for prefix in self.MODEL_MAX_TOKENS.keys()
@@ -153,7 +158,7 @@ class ClaudetteClaudeAPI:
                         }
 
                         if self.should_use_cache_control(self.model):
-                            system_message["cache_control"] = {"type": "ephemeral"}
+                            system_message.cache_control = {"type": "ephemeral"}
 
                         system_messages.append(system_message)
 
@@ -282,7 +287,7 @@ class ClaudetteClaudeAPI:
                 else:
                     handle_error("[Error] {0}".format(str(e)))
             except urllib.error.URLError as e:
-                handle_error("[Error] {0}".format(str(e)))
+                handle_error(f"[Error] {str(e)}")
             finally:
                 self.spinner.stop()
 
@@ -291,6 +296,11 @@ class ClaudetteClaudeAPI:
             self.spinner.stop()
 
     def fetch_models(self):
+
+        if not self.api_key:
+            sublime.error_message(f"The API key is undefined. Please check your API key configuration.")
+            return []
+
         try:
             sublime.status_message('Fetching models')
             headers = {

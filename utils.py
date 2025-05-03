@@ -1,5 +1,7 @@
+import sublime
 import os
 from pathlib import Path
+from .constants import SETTINGS_FILE
 
 def claudette_chat_status_message(window, message: str, prefix: str = "ℹ️") -> None:
     """
@@ -25,9 +27,9 @@ def claudette_chat_status_message(window, message: str, prefix: str = "ℹ️") 
         return
 
     if current_chat_view.size() > 0:
-        message = f"\n\n{prefix} {message}\n"
+        message = f"\n\n{prefix + ' ' if prefix else ''}{message}\n"
     else:
-        message = f"{prefix} {message}\n"
+        message = f"{prefix + ' ' if prefix else ''}{message}\n"
 
     current_chat_view.set_read_only(False)
     current_chat_view.run_command('append', {
@@ -35,6 +37,12 @@ def claudette_chat_status_message(window, message: str, prefix: str = "ℹ️") 
         'force': True,
         'scroll_to_end': True
     })
+
+    # Move cursor to the end of the view
+    end_point = current_chat_view.size()
+    current_chat_view.sel().clear()
+    current_chat_view.sel().add(sublime.Region(end_point, end_point))
+
     current_chat_view.set_read_only(True)
 
 def claudette_estimate_api_tokens(text):
@@ -110,3 +118,64 @@ def claudette_is_text_file(file_path, sample_size=4096, max_size=1024*1024*10):
 
     except IOError as e:
         return False, None, f"IO Error: {str(e)}"
+
+def claudette_get_api_key():
+    """
+    Get the currently active API key.
+
+    Returns:
+        dict or None: The active API key as a dictionary with 'key' and 'name' fields,
+                      or None if no valid key is available
+    """
+    settings = sublime.load_settings(SETTINGS_FILE)
+    api_key = settings.get('api_key')
+
+    # For string API key, return a dict format
+    if isinstance(api_key, str) and api_key.strip():
+        return {'key': api_key, 'name': 'Default'}
+
+    # For dict with multiple keys, get the current one
+    elif isinstance(api_key, dict) and api_key.get('keys') and isinstance(api_key['keys'], list):
+        keys = api_key['keys']
+        current_index = api_key.get('default_index', 0)
+
+        # If there's a valid current index, return that key
+        if isinstance(current_index, int) and 0 <= current_index < len(keys):
+            key_entry = keys[current_index]
+            if isinstance(key_entry, dict) and key_entry.get('key'):
+                return key_entry
+
+        # Otherwise return the first valid key
+        for key_entry in keys:
+            if isinstance(key_entry, dict) and key_entry.get('key'):
+                return key_entry
+
+    return None
+
+def claudette_get_api_key_value():
+    """
+    Extract the API key value from the API key dictionary.
+
+    Returns:
+        str: The API key value, or an empty string if not available
+    """
+    api_key = claudette_get_api_key()
+
+    if isinstance(api_key, dict):
+        return api_key.get('key', '')
+
+    return ''
+
+def claudette_get_api_key_name():
+    """
+    Get the API key name from the API key dictionary.
+
+    Returns:
+        str: The API key name, 'Default' if the key has no name, or 'Undefined'
+    """
+    api_key = claudette_get_api_key()
+
+    if isinstance(api_key, dict):
+        return api_key.get('name', 'Default')
+
+    return 'Undefined'
