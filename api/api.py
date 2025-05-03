@@ -158,7 +158,7 @@ class ClaudetteClaudeAPI:
                         }
 
                         if self.should_use_cache_control(self.model):
-                            system_message.cache_control = {"type": "ephemeral"}
+                            system_message['cache_control'] = {"type": "ephemeral"}
 
                         system_messages.append(system_message)
 
