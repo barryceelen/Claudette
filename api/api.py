@@ -12,8 +12,8 @@ class ClaudetteClaudeAPI:
 
     def __init__(self):
         self.settings = sublime.load_settings(SETTINGS_FILE)
-        self.max_tokens = self.settings.get('max_tokens', MAX_TOKENS)
         self.api_key = claudette_get_api_key_value()
+        self.max_tokens = self.settings.get('max_tokens', MAX_TOKENS)
         self.model = self.settings.get('model', DEFAULT_MODEL)
         self.temperature = self.settings.get('temperature', '1.0')
         self.session_cost = 0.0
@@ -283,9 +283,9 @@ class ClaudetteClaudeAPI:
                 error_content = e.read().decode('utf-8')
                 print("Claude API Error Content:", error_content)
                 if e.code == 401:
-                    handle_error(f"[Error] Authentication failed for API key: {str(e)}")
+                    handle_error("[Error] {0}".format(str(e)))
                 else:
-                    handle_error(f"[Error] {str(e)}")
+                    handle_error("[Error] {0}".format(str(e)))
             except urllib.error.URLError as e:
                 handle_error(f"[Error] {str(e)}")
             finally:
@@ -322,17 +322,17 @@ class ClaudetteClaudeAPI:
 
         except urllib.error.HTTPError as e:
             if e.code == 401:
-                print(f"Claude API: {str(e)}")
-                sublime.error_message(f"Authentication failed when fetching models from the Claude API.")
+                print("Claude API: {0}".format(str(e)))
+                sublime.error_message("Authentication invalid when fetching the available models from the Claude API.")
             else:
-                print(f"Claude API: {str(e)}")
-                sublime.error_message(f"An error occurred fetching models from the Claude API.")
+                print("Claude API: {0}".format(str(e)))
+                sublime.error_message("An error occurred fetching the available models from the Claude API.")
         except urllib.error.URLError as e:
-            print(f"Claude API: {str(e)}")
-            sublime.error_message(f"Connection error fetching models from the Claude API.")
+            print("Claude API: {0}".format(str(e)))
+            sublime.error_message("An error occurred fetching the available models from the Claude API.")
         except Exception as e:
-            print(f"Claude API: {str(e)}")
-            sublime.error_message(f"An unexpected error occurred fetching models from the Claude API.")
+            print("Claude API: {0}".format(str(e)))
+            sublime.error_message("An error occurred fetching the available models from the Claude API.")
         finally:
             sublime.status_message('')
 
