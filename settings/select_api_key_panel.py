@@ -63,10 +63,11 @@ class ClaudetteSelectApiKeyPanelCommand(sublime_plugin.WindowCommand):
 
                     sublime.status_message(f"Switched to API key: {panel_items[index][0]}")
 
+            # Get the current selection index
             selection_index = 0
             if isinstance(api_key, dict) and api_key.get('keys'):
-                current_index = api_key.get('default_index', 0)
-                if 0 <= current_index < len(panel_items) - 1:  # -1 for settings item
+                current_index = api_key.get('active_key', 0)
+                if isinstance(current_index, int) and 0 <= current_index < len(api_key['keys']):
                     selection_index = current_index
 
             self.window.show_quick_panel(
