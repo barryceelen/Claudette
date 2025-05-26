@@ -137,7 +137,7 @@ def claudette_get_api_key():
     # For dict with multiple keys, get the current one
     elif isinstance(api_key, dict) and api_key.get('keys') and isinstance(api_key['keys'], list):
         keys = api_key['keys']
-        current_index = api_key.get('default_index', 0)
+        current_index = api_key.get('active_key', 0)
 
         # If there's a valid current index, return that key
         if isinstance(current_index, int) and 0 <= current_index < len(keys):
