@@ -167,7 +167,7 @@ class ClaudetteClaudeAPI:
 
             data = {
                 'messages': filtered_messages,
-                'max_tokens': MAX_TOKENS,
+                'max_tokens': max_tokens,
                 'model': self.model,
                 'stream': True,
                 'system': system_messages,
