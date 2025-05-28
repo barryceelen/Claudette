@@ -24,7 +24,7 @@
 	// https://console.anthropic.com/settings/keys
 	//
 	"api_key": "",
-	"max_tokens": "200000",
+	"max_tokens": 64000,
 	// Note that a 'Switch Model' command exists that allows you to select the
 	// model via the command palette.
 	//
