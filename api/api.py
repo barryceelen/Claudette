@@ -77,7 +77,11 @@ class ClaudetteClaudeAPI:
     MODEL_MAX_TOKENS = {
         'claude-3-opus': 4096,
         'claude-3.5-sonnet': 8192,
-        'claude-3.5-haiku': 4096
+        'claude-3.5-haiku': 4096,
+        'claude-3-opus': 32000,
+        'claude-3-7-sonnet': 64000,
+        'claude-sonnet-4': 64000,
+        'claude-opus-4': 32000,
     }
 
     def stream_response(self, chunk_callback, messages, chat_view=None):
