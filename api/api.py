@@ -13,7 +13,10 @@ class ClaudetteClaudeAPI:
     def __init__(self):
         self.settings = sublime.load_settings(SETTINGS_FILE)
         self.api_key = claudette_get_api_key_value()
-        self.max_tokens = self.settings.get('max_tokens', MAX_TOKENS)
+        try:
+            self.max_tokens = int(self.settings.get('max_tokens', MAX_TOKENS))
+        except (TypeError, ValueError):
+            self.max_tokens = MAX_TOKENS
         self.model = self.settings.get('model', DEFAULT_MODEL)
         self.temperature = self.settings.get('temperature', '1.0')
         self.session_cost = 0.0
