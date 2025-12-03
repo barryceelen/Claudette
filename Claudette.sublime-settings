@@ -24,6 +24,8 @@
 	// https://console.anthropic.com/settings/keys
 	//
 	"api_key": "",
+	// API base URL. Defaults to https://api.anthropic.com/v1/
+	"base_url": "https://api.anthropic.com/v1/",
 	"max_tokens": 64000,
 	// Note that a 'Switch Model' command exists that allows you to select the
 	// model via the command palette.

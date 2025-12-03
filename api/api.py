@@ -4,15 +4,14 @@ import urllib.request
 import urllib.parse
 import urllib.error
 from ..statusbar.spinner import ClaudetteSpinner
-from ..constants import ANTHROPIC_VERSION, CACHE_SUPPORTED_MODEL_PREFIXES, DEFAULT_MODEL, MAX_TOKENS, SETTINGS_FILE
+from ..constants import ANTHROPIC_VERSION, CACHE_SUPPORTED_MODEL_PREFIXES, DEFAULT_MODEL, DEFAULT_BASE_URL, MAX_TOKENS, SETTINGS_FILE
 from ..utils import claudette_get_api_key_value
 
 class ClaudetteClaudeAPI:
-    BASE_URL = 'https://api.anthropic.com/v1/'
-
     def __init__(self):
         self.settings = sublime.load_settings(SETTINGS_FILE)
         self.api_key = claudette_get_api_key_value()
+        self.base_url = self.settings.get('base_url', DEFAULT_BASE_URL)
         try:
             self.max_tokens = int(self.settings.get('max_tokens', MAX_TOKENS))
         except (TypeError, ValueError):
@@ -179,7 +178,7 @@ class ClaudetteClaudeAPI:
             }
 
             req = urllib.request.Request(
-                urllib.parse.urljoin(self.BASE_URL, 'messages'),
+                urllib.parse.urljoin(self.base_url, 'messages'),
                 data=json.dumps(data).encode('utf-8'),
                 headers=headers,
                 method='POST'
@@ -316,7 +315,7 @@ class ClaudetteClaudeAPI:
             }
 
             req = urllib.request.Request(
-                urllib.parse.urljoin(self.BASE_URL, 'models'),
+                urllib.parse.urljoin(self.base_url, 'models'),
                 headers=headers,
                 method='GET'
             )
