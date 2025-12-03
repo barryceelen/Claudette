@@ -255,6 +255,53 @@ class ClaudetteChatView:
             print(f"{PLUGIN_NAME} Error copying to clipboard: {str(e)}")
             sublime.status_message("Error copying code to clipboard")
 
+    def add_select_model_button(self, position):
+        """Add a phantom button to open the select model panel at the given position."""
+        if not self.view:
+            return
+
+        phantom_set = self.get_phantom_set(self.view)
+        button_positions = self.get_button_positions(self.view)
+        button_html = '''<div class="code-block-button"><a class="copy-button" href="select_model">Select Model</a></div>'''
+
+        region = sublime.Region(position, position)
+        phantom = sublime.Phantom(
+            region,
+            button_html,
+            sublime.LAYOUT_BLOCK,
+            lambda href: self.handle_select_model()
+        )
+
+        # Get existing phantoms and add the new one
+        existing_phantoms = list(phantom_set.phantoms)
+        existing_phantoms.append(phantom)
+        phantom_set.update(existing_phantoms)
+
+        # Track the button position so it's preserved when code blocks are updated
+        button_positions.add(position)
+
+        # Move cursor to the line after the button
+        # Phantoms are rendered but don't take up space, so we add a newline and place cursor there
+        self.view.set_read_only(False)
+        self.view.run_command('append', {
+            'characters': '\n',
+            'force': True,
+            'scroll_to_end': True
+        })
+        end_point = self.view.size()
+        self.view.sel().clear()
+        self.view.sel().add(sublime.Region(end_point, end_point))
+        self.view.set_read_only(True)
+
+    def handle_select_model(self):
+        """Open the select model panel when button is clicked."""
+        try:
+            if self.window:
+                self.window.run_command('claudette_select_model_panel')
+        except Exception as e:
+            print(f"{PLUGIN_NAME} Error opening select model panel: {str(e)}")
+            sublime.status_message("Error opening select model panel")
+
     def find_code_blocks(self, content: str) -> List[ClaudetteCodeBlock]:
         """Find all code blocks in the content."""
         blocks = []
