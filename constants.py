@@ -1,6 +1,7 @@
 ANTHROPIC_VERSION = "2023-06-01";
 CACHE_SUPPORTED_MODEL_PREFIXES = { 'claude-3' }
 DEFAULT_MODEL = "claude-3-opus-20240229"
+DEFAULT_BASE_URL = "https://api.anthropic.com/v1/"
 MAX_TOKENS = 4000
 PLUGIN_NAME = "Claudette"
 SETTINGS_FILE = "Claudette.sublime-settings"

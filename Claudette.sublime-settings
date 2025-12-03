@@ -24,12 +24,14 @@
 	// https://console.anthropic.com/settings/keys
 	//
 	"api_key": "",
+	// API base URL. Defaults to https://api.anthropic.com/v1/
+	"base_url": "https://api.anthropic.com/v1/",
 	"max_tokens": 64000,
 	// Note that a 'Switch Model' command exists that allows you to select the
 	// model via the command palette.
 	//
 	// https://docs.anthropic.com/en/docs/about-claude/models#model-comparison-table
-	"model": "claude-3-5-sonnet-latest",
+	"model": "claude-sonnet-4-5",
 	// The system message is added when the first request is sent to the
 	// Anthropic API. If an empty system message is selected as the
 	// default_system_message_index, no system message will be sent.

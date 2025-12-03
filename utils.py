@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 from .constants import SETTINGS_FILE
 
-def claudette_chat_status_message(window, message: str, prefix: str = "ℹ️") -> None:
+def claudette_chat_status_message(window, message: str, prefix: str = "ℹ️") -> int:
     """
     Display a status message in the active chat view.
 
@@ -11,9 +11,12 @@ def claudette_chat_status_message(window, message: str, prefix: str = "ℹ️") 
         window: The Sublime Text window
         message (str): The status message to display
         prefix (str, optional): Icon or text prefix for the message. Defaults to "ℹ️"
+
+    Returns:
+        int: The end position of the message in the view, or -1 if no view was found
     """
     if not window:
-        return
+        return -1
 
     # Find the active chat view
     current_chat_view = None
@@ -24,10 +27,20 @@ def claudette_chat_status_message(window, message: str, prefix: str = "ℹ️") 
             break
 
     if not current_chat_view:
-        return
+        return -1
 
     if current_chat_view.size() > 0:
-        message = f"\n\n{prefix + ' ' if prefix else ''}{message}\n"
+        view_size = current_chat_view.size()
+        last_chars = current_chat_view.substr(sublime.Region(max(0, view_size - 2), view_size))
+        if last_chars == '\n\n':
+            # Content already ends with two newlines, don't add any newline before message
+            message = f"{prefix + ' ' if prefix else ''}{message}\n"
+        elif last_chars.endswith('\n'):
+            # Content ends with one newline, add one more for spacing
+            message = f"\n{prefix + ' ' if prefix else ''}{message}\n"
+        else:
+            # Content doesn't end with newline, add two for spacing
+            message = f"\n\n{prefix + ' ' if prefix else ''}{message}\n"
     else:
         message = f"{prefix + ' ' if prefix else ''}{message}\n"
 
@@ -38,12 +51,14 @@ def claudette_chat_status_message(window, message: str, prefix: str = "ℹ️") 
         'scroll_to_end': True
     })
 
-    # Move cursor to the end of the view
     end_point = current_chat_view.size()
+
     current_chat_view.sel().clear()
     current_chat_view.sel().add(sublime.Region(end_point, end_point))
 
     current_chat_view.set_read_only(True)
+
+    return end_point
 
 def claudette_estimate_api_tokens(text):
     """Estimate Claude API tokens based on character count (rough approximation)."""
