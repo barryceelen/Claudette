@@ -5,3 +5,4 @@ DEFAULT_BASE_URL = "https://api.anthropic.com/v1/"
 MAX_TOKENS = 4000
 PLUGIN_NAME = "Claudette"
 SETTINGS_FILE = "Claudette.sublime-settings"
+DEFAULT_VERIFY_SSL = True

@@ -3,8 +3,9 @@ import json
 import urllib.request
 import urllib.parse
 import urllib.error
+import ssl
 from ..statusbar.spinner import ClaudetteSpinner
-from ..constants import ANTHROPIC_VERSION, CACHE_SUPPORTED_MODEL_PREFIXES, DEFAULT_MODEL, DEFAULT_BASE_URL, MAX_TOKENS, SETTINGS_FILE
+from ..constants import ANTHROPIC_VERSION, CACHE_SUPPORTED_MODEL_PREFIXES, DEFAULT_MODEL, DEFAULT_BASE_URL, MAX_TOKENS, SETTINGS_FILE, DEFAULT_VERIFY_SSL
 from ..utils import claudette_get_api_key_value
 
 class ClaudetteClaudeAPI:
@@ -23,6 +24,19 @@ class ClaudetteClaudeAPI:
         self.session_output_tokens = 0
         self.spinner = ClaudetteSpinner()
         self.pricing = self.settings.get('pricing')
+        self.verify_ssl = self.settings.get('verify_ssl', DEFAULT_VERIFY_SSL)
+
+    def _get_ssl_context(self):
+        """Create and return an SSL context based on verify_ssl setting."""
+        if self.verify_ssl:
+            # Use default SSL context with verification enabled
+            return ssl.create_default_context()
+        else:
+            # Create unverified SSL context for self-signed certificates
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            return ssl_context
 
     @staticmethod
     def get_valid_temperature(temp):
@@ -185,7 +199,8 @@ class ClaudetteClaudeAPI:
             )
 
             try:
-                with urllib.request.urlopen(req) as response:
+                ssl_context = self._get_ssl_context()
+                with urllib.request.urlopen(req, context=ssl_context) as response:
                     for line in response:
                         if not line or line.isspace():
                             continue
@@ -371,7 +386,8 @@ class ClaudetteClaudeAPI:
                 method='GET'
             )
 
-            with urllib.request.urlopen(req) as response:
+            ssl_context = self._get_ssl_context()
+            with urllib.request.urlopen(req, context=ssl_context) as response:
                 data = json.loads(response.read().decode('utf-8'))
                 model_ids = [item['id'] for item in data['data']]
                 sublime.status_message('')
