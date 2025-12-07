@@ -4,7 +4,7 @@ import time
 class ClaudetteSpinner:
     def __init__(self):
         """Initialize the spinner with default values."""
-        self.spinner_chars = [".  ", ".. ", "...", "   "]
+        self.spinner_chars = ['·', '✢', '✳', '∗', '✻', '✽']
         self.current_index = 0
         self.active = False
         self.message = ""
@@ -47,15 +47,15 @@ class ClaudetteSpinner:
         if not self.active:
             return
 
-        if self.duration is not None:
-            elapsed_time = (time.time() - self.start_time) * 1000  # Convert to milliseconds
+        if self.duration is not None and self.start_time is not None:
+            elapsed_time = (time.time() - self.start_time) * 1000 # Convert to milliseconds
             if elapsed_time >= self.duration:
                 self.stop()
                 return
 
         spinner = self.spinner_chars[self.current_index]
         self.current_index = (self.current_index + 1) % len(self.spinner_chars)
-        status = f"{self.message}{spinner}"
+        status = f"{self.message} {spinner}"
 
         sublime.set_timeout_async(lambda: sublime.status_message(status), 0)
 

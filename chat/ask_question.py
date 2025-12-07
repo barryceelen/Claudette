@@ -5,6 +5,7 @@ from ..constants import PLUGIN_NAME, SETTINGS_FILE
 from ..api.api import ClaudetteClaudeAPI
 from ..api.handler import ClaudetteStreamingResponseHandler
 from .chat_view import ClaudetteChatView
+from ..utils import claudette_chat_status_message, claudette_get_api_key_value
 
 class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
     def __init__(self, view):
@@ -82,10 +83,12 @@ class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
         if not self.create_chat_panel():
             return
 
-        if not self.settings.get('api_key'):
-            self.chat_view.append_text(
-                "A Claude API key is required. Please add your API key via Package Settings > Claudette.\n"
-            )
+        api_key = claudette_get_api_key_value();
+
+        if not api_key:
+            window = self.get_window()
+            claudette_chat_status_message(window, "Please add your Claude API key via the `Settings > Package Settings > Claudette` menu.", "⚠️")
+            claudette_chat_status_message(window, "Claudette allows you to define a single key, or you can add multiple keys each with their own name. For example, you can define a \"Work\" and \"Personal\" key. If you have multiple API keys defined the `Claudette: Switch API Key` command allows you switch between them.", "")
             return
 
         self.send_to_claude(code, question.strip())

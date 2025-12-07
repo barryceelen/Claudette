@@ -4,16 +4,20 @@ import json
 import urllib.request
 import urllib.parse
 import urllib.error
+import ssl
 from ..statusbar.spinner import ClaudetteSpinner
-from ..constants import ANTHROPIC_VERSION, CACHE_SUPPORTED_MODEL_PREFIXES, DEFAULT_MODEL, MAX_TOKENS, SETTINGS_FILE
+from ..constants import ANTHROPIC_VERSION, CACHE_SUPPORTED_MODEL_PREFIXES, DEFAULT_MODEL, DEFAULT_BASE_URL, MAX_TOKENS, SETTINGS_FILE, DEFAULT_VERIFY_SSL
+from ..utils import claudette_get_api_key_value
 
 class ClaudetteClaudeAPI:
-    BASE_URL = 'https://api.anthropic.com/v1/'
-
     def __init__(self):
         self.settings = sublime.load_settings(SETTINGS_FILE)
-        self.api_key = self.settings.get('api_key')
-        self.max_tokens = self.settings.get('max_tokens', MAX_TOKENS)
+        self.api_key = claudette_get_api_key_value()
+        self.base_url = self.settings.get('base_url', DEFAULT_BASE_URL)
+        try:
+            self.max_tokens = int(self.settings.get('max_tokens', MAX_TOKENS))
+        except (TypeError, ValueError):
+            self.max_tokens = MAX_TOKENS
         self.model = self.settings.get('model', DEFAULT_MODEL)
         self.temperature = self.settings.get('temperature', '1.0')
         self.session_cost = 0.0
@@ -21,6 +25,19 @@ class ClaudetteClaudeAPI:
         self.session_output_tokens = 0
         self.spinner = ClaudetteSpinner()
         self.pricing = self.settings.get('pricing')
+        self.verify_ssl = self.settings.get('verify_ssl', DEFAULT_VERIFY_SSL)
+
+    def _get_ssl_context(self):
+        """Create and return an SSL context based on verify_ssl setting."""
+        if self.verify_ssl:
+            # Use default SSL context with verification enabled
+            return ssl.create_default_context()
+        else:
+            # Create unverified SSL context for self-signed certificates
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            return ssl_context
 
     @staticmethod
     def get_valid_temperature(temp):
@@ -74,7 +91,11 @@ class ClaudetteClaudeAPI:
     MODEL_MAX_TOKENS = {
         'claude-3-opus': 4096,
         'claude-3.5-sonnet': 8192,
-        'claude-3.5-haiku': 4096
+        'claude-3.5-haiku': 4096,
+        'claude-3-opus': 32000,
+        'claude-3-7-sonnet': 64000,
+        'claude-sonnet-4': 64000,
+        'claude-opus-4': 32000,
     }
 
     def stream_response(self, chunk_callback, messages, chat_view=None):
@@ -89,6 +110,10 @@ class ClaudetteClaudeAPI:
             )
 
         if not messages or not any(msg.get('content', '').strip() for msg in messages):
+            return
+
+        if not self.api_key:
+            handle_error(f"[Error] The API key is not set. Please check your API key configuration.")
             return
 
         try:
@@ -154,7 +179,7 @@ class ClaudetteClaudeAPI:
                         }
 
                         if self.should_use_cache_control(self.model):
-                            system_message["cache_control"] = {"type": "ephemeral"}
+                            system_message['cache_control'] = {"type": "ephemeral"}
 
                         system_messages.append(system_message)
 
@@ -172,7 +197,7 @@ class ClaudetteClaudeAPI:
 
             data = {
                 'messages': filtered_messages,
-                'max_tokens': MAX_TOKENS,
+                'max_tokens': max_tokens,
                 'model': self.model,
                 'stream': True,
                 'system': system_messages,
@@ -180,14 +205,15 @@ class ClaudetteClaudeAPI:
             }
 
             req = urllib.request.Request(
-                urllib.parse.urljoin(self.BASE_URL, 'messages'),
+                urllib.parse.urljoin(self.base_url, 'messages'),
                 data=json.dumps(data).encode('utf-8'),
                 headers=headers,
                 method='POST'
             )
 
             try:
-                with urllib.request.urlopen(req) as response:
+                ssl_context = self._get_ssl_context()
+                with urllib.request.urlopen(req, context=ssl_context) as response:
                     for line in response:
                         if not line or line.isspace():
                             continue
@@ -290,12 +316,63 @@ class ClaudetteClaudeAPI:
             except urllib.error.HTTPError as e:
                 error_content = e.read().decode('utf-8')
                 print("Claude API Error Content:", error_content)
-                if e.code == 401:
+
+                # Check if it's a 404 error (model not found)
+                if e.code == 404:
+                    try:
+                        error_data = json.loads(error_content)
+                        error_type = error_data.get('error', {}).get('type', '')
+                        error_message = error_data.get('error', {}).get('message', '')
+
+                        # Check if the error is about a model not being found
+                        if error_type == 'not_found_error' and error_message.startswith('model:'):
+                            # Extract the model name from the error message
+                            # Format: "model: claude-sonnet-4-5-latest"
+                            error_model = error_message.replace('model:', '').strip()
+
+                            # Compare with the currently selected model
+                            if error_model == self.model:
+                                # Get window from chat_view (which is a sublime.View)
+                                window = None
+                                if chat_view:
+                                    window = chat_view.window()
+
+                                if window:
+                                    from ..utils import claudette_chat_status_message
+                                    from ..chat.chat_view import ClaudetteChatView
+
+                                    # Display the error message and get the end position
+                                    message_end_position = claudette_chat_status_message(
+                                        window,
+                                        f'The "{error_model}" model cannot be found.',
+                                        "⚠️"
+                                    )
+
+                                    # Add a button to open the select model panel
+                                    if message_end_position >= 0:
+                                        try:
+                                            chat_view_instance = ClaudetteChatView.get_instance(window, self.settings)
+                                            if chat_view_instance:
+                                                chat_view_instance.add_select_model_button(message_end_position)
+                                        except Exception as e:
+                                            print(f"Error adding select model button: {str(e)}")
+                                else:
+                                    # Fallback to chunk_callback if window not available
+                                    handle_error(f'[Error] The "{error_model}" model cannot be found. Please update your model via Settings > Package Settings > Claudette > Select Model.')
+                            else:
+                                # Model in error doesn't match current model, show generic error
+                                handle_error("[Error] {0}".format(str(e)))
+                        else:
+                            handle_error("[Error] {0}".format(str(e)))
+                    except (json.JSONDecodeError, AttributeError, KeyError):
+                        # If we can't parse the error, show generic 404 error
+                        handle_error("[Error] {0}".format(str(e)))
+                elif e.code == 401:
                     handle_error("[Error] {0}".format(str(e)))
                 else:
                     handle_error("[Error] {0}".format(str(e)))
             except urllib.error.URLError as e:
-                handle_error("[Error] {0}".format(str(e)))
+                handle_error(f"[Error] {str(e)}")
             finally:
                 self.spinner.stop()
 
@@ -304,6 +381,11 @@ class ClaudetteClaudeAPI:
             self.spinner.stop()
 
     def fetch_models(self):
+
+        if not self.api_key:
+            sublime.error_message(f"The API key is undefined. Please check your API key configuration.")
+            return []
+
         try:
             sublime.status_message('Fetching models')
             headers = {
@@ -312,12 +394,13 @@ class ClaudetteClaudeAPI:
             }
 
             req = urllib.request.Request(
-                urllib.parse.urljoin(self.BASE_URL, 'models'),
+                urllib.parse.urljoin(self.base_url, 'models'),
                 headers=headers,
                 method='GET'
             )
 
-            with urllib.request.urlopen(req) as response:
+            ssl_context = self._get_ssl_context()
+            with urllib.request.urlopen(req, context=ssl_context) as response:
                 data = json.loads(response.read().decode('utf-8'))
                 model_ids = [item['id'] for item in data['data']]
                 sublime.status_message('')
