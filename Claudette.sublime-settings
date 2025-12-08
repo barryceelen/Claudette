@@ -48,19 +48,19 @@
 	// Index of the currently active system message in the system_messages setting.
 	"default_system_message_index": 0,
 	"temperature": "1.0",
-	// Claude pricing per 1K tokens (as of February 2025)
+	// Claude pricing per 1K tokens (as of December 2025)
 	"pricing": {
 		"haiku": {
-			"input": 0.0008,
-			"output": 0.004,
-			"cache_write": 0.001,
-			"cache_read": 0.00008
+			"input": 0.001,
+			"output": 0.005,
+			"cache_write": 0.00125,
+			"cache_read": 0.0001
 		},
 		"opus": {
-			"input": 0.015,
-			"output": 0.075,
-			"cache_write": 0.01875,
-			"cache_read": 0.0015
+			"input": 0.005,
+			"output": 0.025,
+			"cache_write": 0.00625,
+			"cache_read": 0.0005
 		},
 		"sonnet": {
 			"input": 0.003,
