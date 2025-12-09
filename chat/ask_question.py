@@ -159,8 +159,8 @@ class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
 
             def on_complete():
                 # Add the response to conversation history after streaming is complete
-                response_start = self.chat_view.view.size()
-                response_region = sublime.Region(response_start - message_start)
+                response_end = self.chat_view.view.size()
+                response_region = sublime.Region(message_start, response_end)
                 response_text = self.chat_view.view.substr(response_region)
                 self.chat_view.handle_response(response_text)
                 self.chat_view.on_streaming_complete()
