@@ -19,61 +19,61 @@ Type "Ask Question" in the command palette or find the *Claudette > Ask Question
 
 All commands are available via the *Tools > Claudette* menu or via the command palette.
 
-- **Ask Question**  
-*claudette\_ask\_question*  
-Opens a question input prompt. Submit your question with the <kbd>⏎ Enter</kbd> key. <kbd>⇧ Shift</kbd> + <kbd>⏎ Enter</kbd> for line breaks.  
+- **Ask Question**
+*claudette\_ask\_question*
+Opens a question input prompt. Submit your question with the <kbd>⏎ Enter</kbd> key. <kbd>⇧ Shift</kbd> + <kbd>⏎ Enter</kbd> for line breaks.
 **Pro tip:** In a chat view, press <kbd>Enter</kbd> to ask a question.
 
-- **Ask Question In New Chat View**  
-*claudette\_ask\_new\_question*  
+- **Ask Question In New Chat View**
+*claudette\_ask\_new\_question*
 Opens a question input prompt. A new chat view will open if there is an existing conversation in the current view. Useful for having multiple simultaneous chats, each with their own context and history.
 
-- **Clear Chat History**   
-*claudette\_clear\_chat\_history*  
+- **Clear Chat History**
+*claudette\_clear\_chat\_history*
 Clear the chat history to reduce token usage while keeping previous messages visible in the interface. Prevents resending previous messages in a conversation when a new question is asked.
 
-- **Export Chat History**  
-*claudette\_export\_chat\_history*  
+- **Export Chat History**
+*claudette\_export\_chat\_history*
 Save any Claude chat conversation. Run this command to export the most recently active chat view in the current window to a JSON file.
 
-- **Import Chat History**  
-*claudette\_export\_chat\_history*  
+- **Import Chat History**
+*claudette\_import\_chat\_history*
 Import a chat history JSON file and continue the conversation where it left off.
 
-- **Include in Context**  
-*claudette\_context\_add\_files*  
+- **Include in Context**
+*claudette\_context\_add\_files*
 Available as a context menu item in the file list. Include on or more files or the content of a folder to the chat context.
 
-- **Add Current File To Context**  
-*claudette\_context\_add\_current\_file*  
+- **Add Current File To Context**
+*claudette\_context\_add\_current\_file*
 Add the content of the currently open view to the chat context.
 
-- **Remove Current File From Context**  
-*claudette\_context\_add\_current\_file*  
+- **Remove Current File From Context**
+*claudette\_context\_remove\_current\_file*
 Remove the content of the currently open view to the chat context, if it has been added before.
 
-- **Add All Open Files To Context**  
-*claudette\_context\_add\_open\_files*  
+- **Add All Open Files To Context**
+*claudette\_context\_add\_open\_files*
 Add the content of the currently open files to the chat context.
 
-- **Refresh Included Files**  
-*claudette\_context\_refresh\_files*  
+- **Refresh Included Files**
+*claudette\_context\_refresh\_files*
 Update the content of the files in the chat context with their latest version.
 
-- **Show Included Files**  
-*claudette\_context\_manage\_files*  
+- **Show Included Files**
+*claudette\_context\_manage\_files*
 Manage the list of files that are currently included in the chat context.
 
-- **Clear Included Files**  
-*claudette\_context\_clear\_files*  
+- **Clear Included Files**
+*claudette\_context\_clear\_files*
 Remove all included files from the chat context.
 
-- **Switch Model**  
-*claudette\_select\_model\_panel*  
+- **Switch Model**
+*claudette\_select\_model\_panel*
 Claudette chat is powered by Claude 3.5 Sonnet by default, but you can switch between all available Anthropic models.
 
-- **Switch System Prompt**  
-*claudette\_select\_system\_message\_panel*  
+- **Switch System Prompt**
+*claudette\_select\_system\_message\_panel*
 Improve Claude's performance by using a [system prompt](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/system-prompts). You can create and manage multiple prompts.
 
 - **Switch API Key**
