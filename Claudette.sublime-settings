@@ -75,5 +75,8 @@
 		// If set_scratch is set to true, the chat view will be closed without
 		// prompting to save.
 		"set_scratch": true
+	},
+	"repomix": {
+	    "executable": "repomix"
 	}
 }

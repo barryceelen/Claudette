@@ -27,6 +27,23 @@
 						"command": "claudette_select_api_key_panel"
 					},
 					{
+						"caption": "Repomix",
+						"children": [
+							{
+								"caption": "Run Repomix",
+								"command": "claudette_run_repomix"
+							},
+							{
+								"caption": "Show Content",
+								"command": "claudette_show_repomix"
+							},
+							{
+								"caption": "Clear Content",
+								"command": "claudette_clear_repomix"
+							}
+						]
+					},
+					{
 						"caption": "Chat History",
 						"children": [
 							{

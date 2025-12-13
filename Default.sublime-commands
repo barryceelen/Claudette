@@ -62,5 +62,17 @@
 			"base_file": "${packages}/Claudette/Claudette.sublime-settings",
 			"default": "{\n\t$0\n}\n"
 		}
+	},
+	{
+		"caption": "Claudette: Repomix Run",
+		"command": "claudette_run_repomix"
+	},
+	{
+		"caption": "Claudette: Repomix Show Content",
+		"command": "claudette_show_repomix"
+	},
+	{
+		"caption": "Claudette: Repomix Clear Content",
+		"command": "claudette_clear_repomix"
 	}
 ]

@@ -380,3 +380,28 @@ class ClaudetteChatView:
                 del self._instances[window_id]
 
         self.view = None
+
+    def status_message(self, message: str, prefix: str = "", scroll_to_end: bool = True) -> None:
+        """
+        Display a status message in the chat view without adding it to the conversation history.
+
+        Args:
+            message (str): The status message to display
+            prefix (str, optional): Icon or text prefix for the message.
+            scroll_to_end (bool, optional): Whether to scroll to the end after displaying. Defaults to True
+        """
+        if not self.view:
+            return
+
+        if self.get_size() > 0:
+            message = f"\n\n{prefix} {message}\n"
+        else:
+            message = f"{prefix} {message}\n"
+
+        self.view.set_read_only(False)
+        self.view.run_command('append', {
+            'characters': message,
+            'force': True,
+            'scroll_to_end': scroll_to_end
+        })
+        self.view.set_read_only(True)

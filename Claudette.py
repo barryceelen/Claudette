@@ -19,6 +19,10 @@ from .context.clear_files import ClaudetteContextClearFilesCommand
 from .context.manage_files import ClaudetteContextManageFilesCommand
 from .context.refresh_files import ClaudetteContextRefreshFilesCommand
 
+from .repomix.run_repomix import ClaudetteRunRepomixCommand
+from .repomix.clear_repomix import ClaudetteClearRepomixCommand
+from .repomix.show_repomix import ClaudetteShowRepomixCommand
+
 from .settings.select_model_panel import ClaudetteSelectModelPanelCommand
 from .settings.select_api_key_panel import ClaudetteSelectApiKeyPanelCommand
 from .settings.select_system_message_panel import ClaudetteSelectSystemMessagePanelCommand

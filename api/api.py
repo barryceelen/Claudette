@@ -1,3 +1,4 @@
+# api/api.py
 import sublime
 import json
 import urllib.request
@@ -181,6 +182,18 @@ class ClaudetteClaudeAPI:
                             system_message['cache_control'] = {"type": "ephemeral"}
 
                         system_messages.append(system_message)
+
+                repomix_content = chat_view.settings().get('claudette_repomix')
+                if repomix_content:
+                    system_message = {
+                        "type": "text",
+                        "text": repomix_content.strip()
+                    }
+
+                    if self.should_use_cache_control(self.model):
+                        system_message["cache_control"] = {"type": "ephemeral"}
+
+                    system_messages.append(system_message)
 
             data = {
                 'messages': filtered_messages,
