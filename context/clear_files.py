@@ -29,12 +29,12 @@ class ClaudetteContextClearFilesCommand(sublime_plugin.WindowCommand):
 
     def is_visible(self):
         """Controls whether the command appears at all"""
-        return bool(self.get_chat_view())
-
-    def is_enabled(self):
-        """Controls whether the command is greyed out"""
         chat_view = self.get_chat_view()
         if not chat_view:
             return False
         included_files = chat_view.settings().get('claudette_context_files', {})
         return bool(included_files)
+
+    def is_enabled(self):
+        """Controls whether the command is greyed out"""
+        return self.is_visible()

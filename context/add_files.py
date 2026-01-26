@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 from .file_handler import ClaudetteFileHandler
 from ..utils import claudette_chat_status_message
+from ..chat.chat_view import ClaudetteChatView
+from ..constants import SETTINGS_FILE
 from typing import List, Set
 
 class ClaudetteGitignoreParser:
@@ -91,9 +93,14 @@ class ClaudetteContextAddFilesCommand(sublime_plugin.WindowCommand):
         if not paths:
             return
 
+        created_new_view = False
         chat_view = self.get_chat_view()
         if not chat_view:
-            return
+            chat_view = self.create_chat_view()
+            if not chat_view:
+                sublime.status_message("Could not create chat view")
+                return
+            created_new_view = True
 
         file_handler = ClaudetteFileHandler()
         file_handler.files = chat_view.settings().get('claudette_context_files', {})
@@ -156,6 +163,11 @@ class ClaudetteContextAddFilesCommand(sublime_plugin.WindowCommand):
         claudette_chat_status_message(self.window, message, "✅")
         sublime.status_message(message)
 
+        # Open the chat input panel if we created a new chat view
+        # Use a small delay to ensure proper focus after context menu closes
+        if created_new_view:
+            sublime.set_timeout(lambda: self.window.run_command('claudette_ask_question'), 100)
+
     def get_chat_view(self):
         for view in self.window.views():
             if (view.settings().get('claudette_is_chat_view', False) and
@@ -163,10 +175,21 @@ class ClaudetteContextAddFilesCommand(sublime_plugin.WindowCommand):
                 return view
         return None
 
+    def create_chat_view(self):
+        """Create a new chat view and return it."""
+        try:
+            settings = sublime.load_settings(SETTINGS_FILE)
+            chat_view_manager = ClaudetteChatView.get_instance(self.window, settings)
+            view = chat_view_manager.create_or_get_view()
+            return view
+        except Exception as e:
+            print(f"Claudette Error creating chat view: {str(e)}")
+            return None
+
     def is_visible(self, paths=None):
         """Controls whether the command appears in the context menu"""
         return True
 
     def is_enabled(self, paths=None):
         """Controls whether the command is greyed out"""
-        return bool(self.get_chat_view() and paths)
+        return bool(paths)

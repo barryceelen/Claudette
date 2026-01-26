@@ -15,6 +15,13 @@ class ClaudetteContextAddCurrentFileCommand(sublime_plugin.WindowCommand):
 
         self.window.run_command('claudette_context_add_files', {'paths': [file_path]})
 
+    def get_chat_view(self):
+        for view in self.window.views():
+            if (view.settings().get('claudette_is_chat_view', False) and
+                view.settings().get('claudette_is_current_chat', False)):
+                return view
+        return None
+
     def is_visible(self):
         """Controls whether the command appears at all"""
         view = self.window.active_view()
@@ -27,15 +34,20 @@ class ClaudetteContextAddCurrentFileCommand(sublime_plugin.WindowCommand):
         if not view.file_name():
             return False
 
+        # Hide if file is already in context
+        chat_view = self.get_chat_view()
+        if chat_view:
+            context_files = chat_view.settings().get('claudette_context_files', {})
+            file_path = view.file_name()
+            for file_info in context_files.values():
+                if file_info['absolute_path'] == file_path:
+                    return False  # File is already in context
+
         return True
 
     def is_enabled(self):
         """Controls whether the command is greyed out"""
         return self.is_visible()
-
-        import sublime
-        import sublime_plugin
-        from ..utils import claudette_chat_status_message
 
 class ClaudetteContextRemoveCurrentFileCommand(sublime_plugin.WindowCommand):
     def run(self):
@@ -92,28 +104,19 @@ class ClaudetteContextRemoveCurrentFileCommand(sublime_plugin.WindowCommand):
         if not view.file_name():
             return False
 
-        # Only show if there's an active chat view
+        # Only show if file IS in context
         chat_view = self.get_chat_view()
         if not chat_view:
             return False
 
-        return True
-
-    def is_enabled(self):
-        """Controls whether the command is greyed out"""
-        if not self.is_visible():
-            return False
-
-        # Only enable if the current file is in the context
-        view = self.window.active_view()
-        file_path = view.file_name()
-
-        chat_view = self.get_chat_view()
         context_files = chat_view.settings().get('claudette_context_files', {})
-
-        # Check if the file exists in context
+        file_path = view.file_name()
         for file_info in context_files.values():
             if file_info['absolute_path'] == file_path:
                 return True
 
         return False
+
+    def is_enabled(self):
+        """Controls whether the command is greyed out"""
+        return self.is_visible()
