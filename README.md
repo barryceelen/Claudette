@@ -49,7 +49,7 @@ Available as a context menu item in the file list. Include on or more files or t
 Add the content of the currently open view to the chat context.
 
 - **Remove Current File From Context**  
-*claudette\_context\_add\_current\_file*  
+*claudette\_context\_remove\_current\_file*  
 Remove the content of the currently open view to the chat context, if it has been added before.
 
 - **Add All Open Files To Context**  
