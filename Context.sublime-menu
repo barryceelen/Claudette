@@ -3,11 +3,11 @@
 		"caption": "Claudette",
 		"children": [
 			{
-				"caption": "Include in Context",
+				"caption": "Add File to Chat",
 				"command": "claudette_context_add_current_file"
 			},
 			{
-				"caption": "Remove from Context",
+				"caption": "Remove from Chat",
 				"command": "claudette_context_remove_current_file"
 			},
 			{

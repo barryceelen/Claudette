@@ -3,7 +3,6 @@
 		"caption": "Claudette",
 		"children": [
 			{
-				"caption": "Include in Context",
 				"command": "claudette_context_add_files",
 				"args": {"paths": []}
 			},

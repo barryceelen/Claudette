@@ -193,3 +193,35 @@ class ClaudetteContextAddFilesCommand(sublime_plugin.WindowCommand):
     def is_enabled(self, paths=None):
         """Controls whether the command is greyed out"""
         return bool(paths)
+
+    def description(self, paths=None):
+        """
+        Dynamically returns the menu caption based on the selected paths.
+        This method is called by Sublime Text to determine the menu item caption.
+        """
+        # Check if a chat view exists
+        chat_view_exists = self.get_chat_view() is not None
+        chat_suffix = " to Chat" if chat_view_exists else " to New Chat"
+
+        if not paths:
+            return "Add" + chat_suffix
+
+        # Ensure paths is a list
+        if isinstance(paths, str):
+            paths = [paths]
+
+        # Check if all paths are directories
+        if all(os.path.isdir(p) for p in paths):
+            if len(paths) == 1:
+                return "Add Directory" + chat_suffix
+            else:
+                return "Add Directories" + chat_suffix
+        # Check if all paths are files
+        elif all(os.path.isfile(p) for p in paths):
+            if len(paths) == 1:
+                return "Add File" + chat_suffix
+            else:
+                return "Add Files" + chat_suffix
+        # Mixed selection (both files and directories)
+        else:
+            return "Add" + chat_suffix
