@@ -4,6 +4,7 @@ import urllib.request
 import urllib.parse
 import urllib.error
 import ssl
+from typing import Any
 from ..statusbar.spinner import ClaudetteSpinner
 from ..constants import ANTHROPIC_VERSION, CACHE_SUPPORTED_MODEL_PREFIXES, DEFAULT_MODEL, DEFAULT_BASE_URL, MAX_TOKENS, SETTINGS_FILE, DEFAULT_VERIFY_SSL
 from ..utils import claudette_get_api_key_value
@@ -172,7 +173,7 @@ class ClaudetteClaudeAPI:
                     combined_content += "</reference_files>"
 
                     if combined_content != "<reference_files>\n</reference_files>":
-                        system_message = {
+                        system_message: dict[str, Any] = {
                             "type": "text",
                             "text": combined_content
                         }
