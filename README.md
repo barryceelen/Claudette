@@ -40,19 +40,19 @@ Save any Claude chat conversation. Run this command to export the most recently 
 *claudette\_export\_chat\_history*  
 Import a chat history JSON file and continue the conversation where it left off.
 
-- **Include in Context**  
+- **Add File to Chat**  
 *claudette\_context\_add\_files*  
 Available as a context menu item in the file list. Include on or more files or the content of a folder to the chat context.
 
-- **Add Current File To Context**  
+- **Add Current File To Chat**  
 *claudette\_context\_add\_current\_file*  
 Add the content of the currently open view to the chat context.
 
-- **Remove Current File From Context**  
+- **Remove Current File From Chat**  
 *claudette\_context\_remove\_current\_file*  
 Remove the content of the currently open view to the chat context, if it has been added before.
 
-- **Add All Open Files To Context**  
+- **Add All Open Files To Chat**  
 *claudette\_context\_add\_open\_files*  
 Add the content of the currently open files to the chat context.
 
