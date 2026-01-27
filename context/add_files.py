@@ -160,20 +160,16 @@ class ClaudetteContextAddFilesCommand(sublime_plugin.WindowCommand):
                 file_list = "', '".join(added_files)
                 message_parts.append(f"files '{file_list}'")
 
-        message = f"Included {' and '.join(message_parts)}"
+        message = f"Added {' and '.join(message_parts)}"
 
-        if result['processed_files'] > 0:
-            message += f" ({result['processed_files']} total files processed)"
         if result['skipped_files'] > 0:
             message += f", skipped {result['skipped_files']} files"
         if ignored_count > 0:
-            message += f", ignored {ignored_count} files (gitignore)"
+            message += f", ignored {ignored_count} files"
 
         claudette_chat_status_message(self.window, message, "✅")
         sublime.status_message(message)
 
-        # Open the chat input panel if we created a new chat view
-        # Use a small delay to ensure proper focus after context menu closes
         if created_new_view:
             sublime.set_timeout(lambda: self.window.run_command('claudette_ask_question'), 100)
 
