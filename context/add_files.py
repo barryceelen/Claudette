@@ -108,14 +108,14 @@ class ClaudetteContextAddFilesCommand(sublime_plugin.WindowCommand):
         if isinstance(paths, str):
             paths = [paths]
 
-        dirs_count = 0
-        files_count = 0
+        added_dirs: List[str] = []
+        added_files: List[str] = []
         ignored_count = 0
 
         expanded_paths: List[str] = []
         for path in paths:
             if os.path.isdir(path):
-                dirs_count += 1
+                added_dirs.append(os.path.basename(path))
                 gitignore = ClaudetteGitignoreParser(path)
 
                 for root, dirs, files in os.walk(path):
@@ -131,7 +131,7 @@ class ClaudetteContextAddFilesCommand(sublime_plugin.WindowCommand):
                             continue
                         expanded_paths.append(full_path)
             else:
-                files_count += 1
+                added_files.append(os.path.basename(path))
                 # For individual files, always allow git-related files
                 parent_dir = Path(path).parent
                 gitignore = ClaudetteGitignoreParser(str(parent_dir))
@@ -145,11 +145,20 @@ class ClaudetteContextAddFilesCommand(sublime_plugin.WindowCommand):
 
         chat_view.settings().set('claudette_context_files', result['files'])
 
+        # Build message with actual file/directory names
         message_parts = []
-        if dirs_count > 0:
-            message_parts.append(f"{dirs_count} {'directory' if dirs_count == 1 else 'directories'}")
-        if files_count > 0:
-            message_parts.append(f"{files_count} {'file' if files_count == 1 else 'files'}")
+        if added_dirs:
+            if len(added_dirs) == 1:
+                message_parts.append(f"directory '{added_dirs[0]}'")
+            else:
+                dir_list = "', '".join(added_dirs)
+                message_parts.append(f"directories '{dir_list}'")
+        if added_files:
+            if len(added_files) == 1:
+                message_parts.append(f"file '{added_files[0]}'")
+            else:
+                file_list = "', '".join(added_files)
+                message_parts.append(f"files '{file_list}'")
 
         message = f"Included {' and '.join(message_parts)}"
 
