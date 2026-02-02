@@ -26,6 +26,10 @@ class ClaudetteClaudeAPI:
         self.spinner = ClaudetteSpinner()
         self.pricing = self.settings.get('pricing')
         self.verify_ssl = self.settings.get('verify_ssl', DEFAULT_VERIFY_SSL)
+        # Thinking mode settings
+        thinking_settings = self.settings.get('thinking', {})
+        self.thinking_enabled = thinking_settings.get('enabled', False)
+        self.thinking_budget_tokens = thinking_settings.get('budget_tokens', 10000)
 
     def _get_ssl_context(self):
         """Create and return an SSL context based on verify_ssl setting."""
@@ -105,7 +109,7 @@ class ClaudetteClaudeAPI:
 
         def handle_error(error_msg):
             sublime.set_timeout(
-                lambda: chunk_callback(error_msg, is_done=True),
+                lambda: chunk_callback(error_msg, is_done=True, is_thinking=False),
                 0
             )
 
@@ -133,10 +137,16 @@ class ClaudetteClaudeAPI:
                 'content-type': 'application/json',
             }
 
-            filtered_messages = [
-                msg for msg in messages
-                if msg.get('content', '').strip()
-            ]
+            # Filter messages, handling both string content and content arrays (for thinking)
+            filtered_messages = []
+            for msg in messages:
+                content = msg.get('content', '')
+                # Handle string content
+                if isinstance(content, str) and content.strip():
+                    filtered_messages.append(msg)
+                # Handle content array (for thinking responses)
+                elif isinstance(content, list) and len(content) > 0:
+                    filtered_messages.append(msg)
 
             system_messages = [
                 {
@@ -183,14 +193,24 @@ class ClaudetteClaudeAPI:
 
                         system_messages.append(system_message)
 
+            # When thinking is enabled, temperature must be 1.0
+            temperature = 1.0 if self.thinking_enabled else self.get_valid_temperature(self.temperature)
+
             data = {
                 'messages': filtered_messages,
                 'max_tokens': max_tokens,
                 'model': self.model,
                 'stream': True,
                 'system': system_messages,
-                'temperature': self.get_valid_temperature(self.temperature)
+                'temperature': temperature
             }
+
+            # Add thinking parameter when enabled
+            if self.thinking_enabled:
+                data['thinking'] = {
+                    'type': 'enabled',
+                    'budget_tokens': self.thinking_budget_tokens
+                }
 
             req = urllib.request.Request(
                 urllib.parse.urljoin(self.base_url, 'messages'),
@@ -201,6 +221,9 @@ class ClaudetteClaudeAPI:
 
             try:
                 ssl_context = self._get_ssl_context()
+                current_block_type = None  # Track current content block type ('thinking' or 'text')
+                thinking_started = False  # Track if we've started a thinking block
+
                 with urllib.request.urlopen(req, context=ssl_context) as response:
                     for line in response:
                         if not line or line.isspace():
@@ -229,12 +252,39 @@ class ClaudetteClaudeAPI:
                                     elif cache_write_tokens > 0:
                                         cache_info = f" (cache write: {cache_write_tokens:,})"
 
-                            # Handle content updates
-                            if 'delta' in data and 'text' in data['delta']:
-                                sublime.set_timeout(
-                                    lambda text=data['delta']['text']: chunk_callback(text, is_done=False),
-                                    0
-                                )
+                            # Handle content block start - identify thinking vs text blocks
+                            if data.get('type') == 'content_block_start':
+                                block = data.get('content_block', {})
+                                current_block_type = block.get('type')  # 'thinking' or 'text'
+
+                                # Start thinking section with header
+                                if current_block_type == 'thinking' and not thinking_started:
+                                    thinking_started = True
+                                    sublime.set_timeout(
+                                        lambda: chunk_callback("", is_done=False, is_thinking=True, thinking_event='start'),
+                                        0
+                                    )
+                                # When text block starts after thinking, signal transition
+                                elif current_block_type == 'text' and thinking_started:
+                                    sublime.set_timeout(
+                                        lambda: chunk_callback("", is_done=False, is_thinking=True, thinking_event='end'),
+                                        0
+                                    )
+
+                            # Handle content deltas - both thinking and text
+                            if 'delta' in data:
+                                # Handle thinking deltas
+                                if 'thinking' in data['delta']:
+                                    sublime.set_timeout(
+                                        lambda text=data['delta']['thinking']: chunk_callback(text, is_done=False, is_thinking=True),
+                                        0
+                                    )
+                                # Handle text deltas
+                                elif 'text' in data['delta']:
+                                    sublime.set_timeout(
+                                        lambda text=data['delta']['text']: chunk_callback(text, is_done=False, is_thinking=False),
+                                        0
+                                    )
 
                             # Get final output tokens from message_delta
                             if data.get('type') == 'message_delta' and 'usage' in data:
@@ -280,7 +330,9 @@ class ClaudetteClaudeAPI:
                                 else:
                                     session_cost_str = f"${current_cost:.4f}"
 
-                                status_message = f"Tokens: {input_tokens:,} sent, {output_tokens:,} received{cache_info}."
+                                # Build status message with thinking indicator if enabled
+                                thinking_info = " (incl. thinking)" if self.thinking_enabled else ""
+                                status_message = f"Tokens: {input_tokens:,} sent, {output_tokens:,} received{thinking_info}{cache_info}."
 
                                 if session_stats['cost'] > 0:
                                     status_message_cost = f" Cost: {current_cost_str} message, {session_cost_str} session."
@@ -294,7 +346,7 @@ class ClaudetteClaudeAPI:
 
                                 # Signal completion
                                 sublime.set_timeout(
-                                    lambda: chunk_callback("", is_done=True),
+                                    lambda: chunk_callback("", is_done=True, is_thinking=False),
                                     0
                                 )
 

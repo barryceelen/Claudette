@@ -48,6 +48,16 @@
 	// Index of the currently active system message in the system_messages setting.
 	"default_system_message_index": 0,
 	"temperature": "1.0",
+	// Extended thinking mode allows Claude to reason before responding.
+	// When enabled, Claude will show its thought process before the answer.
+	// Note: Thinking mode requires temperature to be 1.0 (enforced automatically).
+	// Supported on Claude 3.5 Sonnet and later models.
+	"thinking": {
+		// Set to true to enable extended thinking mode
+		"enabled": false,
+		// Maximum tokens Claude can use for thinking (minimum 1024, recommended 10000+)
+		"budget_tokens": 10000
+	},
 	// Claude pricing per 1K tokens (as of December 2025)
 	"pricing": {
 		"haiku": {

@@ -32,6 +32,9 @@
 		"command": "claudette_select_api_key_panel"
 	},
 	{
+		"command": "claudette_toggle_thinking"
+	},
+	{
 		"caption": "Claudette: Add Current File To Context",
 		"command": "claudette_context_add_current_file"
 	},

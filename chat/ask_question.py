@@ -157,19 +157,21 @@ class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
 
             message_start = self.chat_view.view.size()
 
-            def on_complete():
-                # Add the response to conversation history after streaming is complete
-                response_end = self.chat_view.view.size()
-                response_region = sublime.Region(message_start, response_end)
-                response_text = self.chat_view.view.substr(response_region)
-                self.chat_view.handle_response(response_text)
-                self.chat_view.on_streaming_complete()
-
             handler = ClaudetteStreamingResponseHandler(
                 view=self.chat_view.view,
                 chat_view=self.chat_view,
-                on_complete=on_complete
+                on_complete=None  # Will be set after handler is created
             )
+
+            def on_complete():
+                # Add the response to conversation history after streaming is complete
+                # Use handler's tracked content for accuracy (includes thinking separately)
+                thinking_content = handler.get_thinking_content()
+                response_content = handler.get_response_content()
+                self.chat_view.handle_response(response_content, thinking_content)
+                self.chat_view.on_streaming_complete()
+
+            handler.on_complete = on_complete
 
             thread = threading.Thread(
                 target=api.stream_response,

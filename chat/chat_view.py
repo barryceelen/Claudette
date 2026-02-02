@@ -135,8 +135,13 @@ class ClaudetteChatView:
             print(f"{PLUGIN_NAME} Error: Could not decode conversation history")
             return []
 
-    def add_to_conversation(self, role: str, content: str):
-        """Add a new message to the conversation history."""
+    def add_to_conversation(self, role: str, content):
+        """Add a new message to the conversation history.
+
+        Args:
+            role: The message role ('user' or 'assistant')
+            content: Either a string or a list of content blocks (for thinking mode)
+        """
         if not self.view:
             return
 
@@ -149,17 +154,31 @@ class ClaudetteChatView:
         try:
             conversation_json = json.dumps(conversation)
             self.view.settings().set('claudette_conversation_json', conversation_json)
-        except json.JSONEncodeError:
-            print(f"{PLUGIN_NAME} Error: Could not encode conversation history")
+        except (json.JSONDecodeError, TypeError) as e:
+            print(f"{PLUGIN_NAME} Error: Could not encode conversation history: {str(e)}")
 
     def handle_question(self, question: str):
         """Handle a new question and return the complete conversation context."""
         self.add_to_conversation("user", question)
         return self.get_conversation_history()
 
-    def handle_response(self, response: str):
-        """Handle the Claude response by adding it to the conversation history."""
-        self.add_to_conversation("assistant", response)
+    def handle_response(self, response: str, thinking: str = None):
+        """Handle the Claude response by adding it to the conversation history.
+
+        Args:
+            response: The text response content
+            thinking: Optional thinking content from extended thinking mode
+        """
+        if thinking:
+            # Use content array format for responses with thinking
+            content = [
+                {"type": "thinking", "thinking": thinking},
+                {"type": "text", "text": response}
+            ]
+            self.add_to_conversation("assistant", content)
+        else:
+            # Use simple string format for regular responses
+            self.add_to_conversation("assistant", response)
 
     def append_text(self, text, scroll_to_end=True):
         """Append text to the chat view."""
