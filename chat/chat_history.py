@@ -127,9 +127,15 @@ class ClaudetteImportChatHistoryCommand(sublime_plugin.WindowCommand):
             sublime_view.settings().set("line_numbers", show_line_numbers)
 
             first_message = True
+            bookmarks = []
             for message in valid_messages:
                 if message['role'] == 'user':
                     prefix = "" if first_message else "\n\n"
+                    # Capture position for bookmark before appending
+                    question_start = sublime_view.size()
+                    bookmark_pos = question_start + len(prefix)
+                    bookmarks.append(sublime.Region(bookmark_pos, bookmark_pos))
+
                     chat_view.append_text(
                         f"{prefix}## Question\n\n{message['content']}\n\n### Claude's Response\n\n",
                         scroll_to_end=False
@@ -140,6 +146,10 @@ class ClaudetteImportChatHistoryCommand(sublime_plugin.WindowCommand):
                         f"{message['content']}\n",
                         scroll_to_end=False
                     )
+
+            # Add bookmarks for all questions
+            if bookmarks:
+                sublime_view.add_regions("bookmarks", bookmarks, "bookmarks", "bookmark", sublime.HIDDEN | sublime.PERSISTENT)
 
             # Store the conversation history in the view's settings
             sublime_view.settings().set('claudette_conversation_json', json.dumps(valid_messages))

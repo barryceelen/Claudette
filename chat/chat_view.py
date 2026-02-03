@@ -192,6 +192,7 @@ class ClaudetteChatView:
             self.view.set_read_only(True)
             self.view.settings().set('claudette_conversation_json', '[]')
             self.clear_buttons()
+            self.view.erase_regions("bookmarks")
 
     def clear_buttons(self):
         """Clear all existing code block copy buttons for the current view."""
