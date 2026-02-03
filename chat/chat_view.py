@@ -161,7 +161,7 @@ class ClaudetteChatView:
         """Handle the Claude response by adding it to the conversation history."""
         self.add_to_conversation("assistant", response)
 
-    def append_text(self, text, scroll_to_end=True):
+    def append_text(self, text, scroll_to_end=False):
         """Append text to the chat view."""
         if not self.view:
             return

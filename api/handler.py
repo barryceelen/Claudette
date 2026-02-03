@@ -12,7 +12,7 @@ class ClaudetteStreamingResponseHandler:
         self.view.run_command('append', {
             'characters': chunk,
             'force': True,
-            'scroll_to_end': True
+            'scroll_to_end': False
         })
         self.view.set_read_only(True)
 

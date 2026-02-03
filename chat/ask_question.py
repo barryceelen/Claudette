@@ -148,7 +148,14 @@ class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
 
             conversation = self.chat_view.handle_question(user_message)
 
+            # Capture position before appending
+            question_start = self.chat_view.view.size()
+
             self.chat_view.append_text(message)
+
+            # Scroll so the question header is at the top of the view
+            layout_pos = self.chat_view.view.text_to_layout(question_start)
+            self.chat_view.view.set_viewport_position(layout_pos, animate=False)
 
             if self.chat_view.get_size() > 0:
                 self.chat_view.focus()
