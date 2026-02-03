@@ -160,12 +160,39 @@ class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
             existing_bookmarks.append(sublime.Region(bookmark_pos, bookmark_pos))
             view.add_regions("bookmarks", existing_bookmarks, "bookmarks", "bookmark", sublime.HIDDEN | sublime.PERSISTENT)
 
-            # Scroll so the question header is at the top of the view
-            layout_pos = self.chat_view.view.text_to_layout(question_start)
-            self.chat_view.view.set_viewport_position(layout_pos, animate=False)
-
             if self.chat_view.get_size() > 0:
                 self.chat_view.focus()
+
+            # Smooth scroll to the question header
+            def smooth_scroll_to_question():
+                view = self.chat_view.view
+                target_pos = view.text_to_layout(question_start)
+                current_pos = view.viewport_position()
+                distance_y = target_pos[1] - current_pos[1]
+                steps = 20
+                step_delay = 15 # ms between steps
+
+                def scroll_step(step):
+                    if step >= steps:
+                        # Final position to ensure accuracy
+                        view.set_viewport_position(target_pos, animate=False)
+                        # Set cursor to question position so Sublime doesn't auto-scroll to end
+                        view.sel().clear()
+                        view.sel().add(sublime.Region(question_start, question_start))
+                        return
+
+                    # Ease-out animation (starts fast, slows down)
+                    progress = step / steps
+                    eased = 1 - (1 - progress) ** 3 # Cubic ease-out
+
+                    new_y = current_pos[1] + (distance_y * eased)
+                    view.set_viewport_position((current_pos[0], new_y), animate=False)
+
+                    sublime.set_timeout(lambda: scroll_step(step + 1), step_delay)
+
+                scroll_step(0)
+
+            sublime.set_timeout(smooth_scroll_to_question, 50)
 
             api = ClaudetteClaudeAPI()
 
