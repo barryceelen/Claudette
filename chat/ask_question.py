@@ -157,16 +157,17 @@ class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
 
             self.chat_view.append_text(message)
 
-            # Add a bookmark at the question header
+            # Add a bookmark at the question text
             existing_bookmarks = view.get_regions("bookmarks")
-            bookmark_pos = question_start + 2 if question_start > 0 else 0
+            prefix_len = 2 if question_start > 0 else 0
+            heading_len = 13 # "## Question\n\n"
+            bookmark_pos = question_start + prefix_len + heading_len
             existing_bookmarks.append(sublime.Region(bookmark_pos, bookmark_pos))
             view.add_regions("bookmarks", existing_bookmarks, "bookmarks", "bookmark", sublime.HIDDEN | sublime.PERSISTENT)
 
             if self.chat_view.get_size() > 0:
                 self.chat_view.focus()
 
-            # Smooth scroll to the question header
             def smooth_scroll_to_question():
                 target_pos = view.text_to_layout(question_start)
                 current_pos = view.viewport_position()

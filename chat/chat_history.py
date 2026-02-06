@@ -131,9 +131,10 @@ class ClaudetteImportChatHistoryCommand(sublime_plugin.WindowCommand):
             for message in valid_messages:
                 if message['role'] == 'user':
                     prefix = "" if first_message else "\n\n"
-                    # Capture position for bookmark before appending
+                    # Capture position for bookmark on the actual question text
                     question_start = sublime_view.size()
-                    bookmark_pos = question_start + len(prefix)
+                    heading_len = 13 # "## Question\n\n"
+                    bookmark_pos = question_start + len(prefix) + heading_len
                     bookmarks.append(sublime.Region(bookmark_pos, bookmark_pos))
 
                     chat_view.append_text(
