@@ -151,10 +151,13 @@ class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
             # Capture position before appending
             question_start = self.chat_view.view.size()
 
+            # Save current selection before appending
+            view = self.chat_view.view
+            saved_selection = [(r.a, r.b) for r in view.sel()]
+
             self.chat_view.append_text(message)
 
             # Add a bookmark at the question header
-            view = self.chat_view.view
             existing_bookmarks = view.get_regions("bookmarks")
             bookmark_pos = question_start + 2 if question_start > 0 else 0
             existing_bookmarks.append(sublime.Region(bookmark_pos, bookmark_pos))
@@ -165,7 +168,6 @@ class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
 
             # Smooth scroll to the question header
             def smooth_scroll_to_question():
-                view = self.chat_view.view
                 target_pos = view.text_to_layout(question_start)
                 current_pos = view.viewport_position()
                 distance_y = target_pos[1] - current_pos[1]
@@ -176,9 +178,13 @@ class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
                     if step >= steps:
                         # Final position to ensure accuracy
                         view.set_viewport_position(target_pos, animate=False)
-                        # Set cursor to question position so Sublime doesn't auto-scroll to end
+                        # Restore selection/cursor position
                         view.sel().clear()
-                        view.sel().add(sublime.Region(question_start, question_start))
+                        if saved_selection:
+                            for a, b in saved_selection:
+                                view.sel().add(sublime.Region(a, b))
+                        else:
+                            view.sel().add(sublime.Region(question_start, question_start))
                         return
 
                     # Ease-out animation (starts fast, slows down)
