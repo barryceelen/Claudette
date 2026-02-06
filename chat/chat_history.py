@@ -130,17 +130,27 @@ class ClaudetteImportChatHistoryCommand(sublime_plugin.WindowCommand):
             bookmarks = []
             for message in valid_messages:
                 if message['role'] == 'user':
+                    question = message['content']
+                    # Create header from question (truncate if needed)
+                    first_line = question.split('\n')[0]
+                    max_len = 60
+                    if len(first_line) > max_len:
+                        header = first_line[:max_len].rstrip() + "..."
+                    else:
+                        header = first_line
+
                     prefix = "" if first_message else "\n\n"
-                    # Capture position for bookmark on the actual question text
+                    # Capture position for bookmark on the header line
                     question_start = sublime_view.size()
-                    heading_len = 13 # "## Question\n\n"
-                    bookmark_pos = question_start + len(prefix) + heading_len
+                    bookmark_pos = question_start + len(prefix) + 2 # After "# "
                     bookmarks.append(sublime.Region(bookmark_pos, bookmark_pos))
 
-                    chat_view.append_text(
-                        f"{prefix}## Question\n\n{message['content']}\n\n### Claude's Response\n\n",
-                        scroll_to_end=False
-                    )
+                    content = f"{prefix}# {header}\n\n"
+                    # Include full question if it was truncated or multi-line
+                    if header != question:
+                        content += f"{question}\n\n"
+
+                    chat_view.append_text(content, scroll_to_end=False)
                     first_message = False
                 elif message['role'] == 'assistant':
                     chat_view.append_text(
@@ -222,6 +232,17 @@ class ClaudetteExportChatHistoryCommand(sublime_plugin.WindowCommand):
             sublime.error_message(f"Could not save chat history - {str(e)}")
 
 class ClaudetteClearChatHistoryCommand(sublime_plugin.TextCommand):
+    def is_enabled(self):
+        window = sublime.active_window()
+        if not window:
+            return False
+
+        for view in window.views():
+            if (view.settings().get('claudette_is_chat_view', False) and
+                view.settings().get('claudette_is_current_chat', False)):
+                return True
+        return False
+
     def run(self, edit):
         window = sublime.active_window()
         if not window:
@@ -241,5 +262,3 @@ class ClaudetteClearChatHistoryCommand(sublime_plugin.TextCommand):
 
             claudette_chat_status_message(window, "Chat history cleared", "✅")
             sublime.status_message("Chat history cleared")
-        else:
-            sublime.status_message("No active chat view found")
