@@ -99,8 +99,6 @@ class ClaudetteClaudeAPI:
             return
 
         try:
-            max_tokens = int(self.max_tokens)
-
             self.spinner.start('Fetching response')
 
             headers = {
@@ -159,7 +157,7 @@ class ClaudetteClaudeAPI:
 
             data = {
                 'messages': filtered_messages,
-                'max_tokens': max_tokens,
+                'max_tokens': self.max_tokens,
                 'model': self.model,
                 'stream': True,
                 'system': system_messages,
