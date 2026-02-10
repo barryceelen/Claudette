@@ -115,7 +115,19 @@ class ClaudetteClaudeAPI:
             system_messages = [
                 {
                     "type": "text",
-                    "text": 'Wrap all code examples in a markdown code block. Ensure each code block is complete and self-contained.',
+                    "text": '''Format responses in markdown. Do not add a summary before your answer. Wrap code in fenced code blocks.
+
+If the reponse warrants being structured in sections, use this heading structure (h1 is reserved for the chat interface):
+
+Content here.
+
+## Subtopic
+
+More content.
+
+```python
+# code example
+```''',
                 }
             ]
 
