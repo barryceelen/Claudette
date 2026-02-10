@@ -134,7 +134,6 @@ class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
             if not self.chat_view:
                 return
 
-            # Separator before question (except the first one)
             message = "\n\n---\n\n" if self.chat_view.get_size() > 0 else ""
 
             message += f"# Question\n\n{question}\n\n"
