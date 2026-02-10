@@ -289,58 +289,53 @@ More content.
                 error_content = e.read().decode('utf-8')
                 print("Claude API Error Content:", error_content)
 
-                # Check if it's a 404 error (model not found)
-                if e.code == 404:
-                    try:
-                        error_data = json.loads(error_content)
-                        error_type = error_data.get('error', {}).get('type', '')
-                        error_message = error_data.get('error', {}).get('message', '')
+                # Try to parse the API error message from the response body
+                error_type = ''
+                error_message = ''
+                try:
+                    error_data = json.loads(error_content)
+                    error_type = error_data.get('error', {}).get('type', '')
+                    error_message = error_data.get('error', {}).get('message', '')
+                except (json.JSONDecodeError, AttributeError, KeyError):
+                    pass
 
-                        # Check if the error is about a model not being found
-                        if error_type == 'not_found_error' and error_message.startswith('model:'):
-                            # Extract the model name from the error message
-                            # Format: "model: claude-sonnet-4-5-latest"
-                            error_model = error_message.replace('model:', '').strip()
+                # Check if it's a 404 model-not-found error
+                if e.code == 404 and error_type == 'not_found_error' and error_message.startswith('model:'):
+                    # Extract the model name from the error message
+                    # Format: "model: claude-sonnet-4-5-latest"
+                    error_model = error_message.replace('model:', '').strip()
 
-                            # Compare with the currently selected model
-                            if error_model == self.model:
-                                # Get window from chat_view (which is a sublime.View)
-                                window = None
-                                if chat_view:
-                                    window = chat_view.window()
+                    display_message = f'The "{error_model}" model does not exist.'
 
-                                if window:
-                                    from ..utils import claudette_chat_status_message
-                                    from ..chat.chat_view import ClaudetteChatView
+                    # Get window from chat_view (which is a sublime.View)
+                    window = None
+                    if chat_view:
+                        window = chat_view.window()
 
-                                    # Display the error message and get the end position
-                                    message_end_position = claudette_chat_status_message(
-                                        window,
-                                        f'The "{error_model}" model cannot be found.',
-                                        "⚠️"
-                                    )
+                    if window:
+                        from ..utils import claudette_chat_status_message
+                        from ..chat.chat_view import ClaudetteChatView
 
-                                    # Add a button to open the select model panel
-                                    if message_end_position >= 0:
-                                        try:
-                                            chat_view_instance = ClaudetteChatView.get_instance(window, self.settings)
-                                            if chat_view_instance:
-                                                chat_view_instance.add_select_model_button(message_end_position)
-                                        except Exception as e:
-                                            print(f"Error adding select model button: {str(e)}")
-                                else:
-                                    # Fallback to chunk_callback if window not available
-                                    handle_error(f'[Error] The "{error_model}" model cannot be found. Please update your model via Settings > Package Settings > Claudette > Select Model.')
-                            else:
-                                # Model in error doesn't match current model, show generic error
-                                handle_error("[Error] {0}".format(str(e)))
-                        else:
-                            handle_error("[Error] {0}".format(str(e)))
-                    except (json.JSONDecodeError, AttributeError, KeyError):
-                        # If we can't parse the error, show generic 404 error
-                        handle_error("[Error] {0}".format(str(e)))
-                elif e.code == 401:
-                    handle_error("[Error] {0}".format(str(e)))
+                        # Display the error message and get the end position
+                        message_end_position = claudette_chat_status_message(
+                            window,
+                            display_message,
+                            "⚠️"
+                        )
+
+                        # Add a button to open the select model panel
+                        if message_end_position >= 0:
+                            try:
+                                chat_view_instance = ClaudetteChatView.get_instance(window, self.settings)
+                                if chat_view_instance:
+                                    chat_view_instance.add_select_model_button(message_end_position)
+                            except Exception as e:
+                                print(f"Error adding select model button: {str(e)}")
+                    else:
+                        # Fallback to chunk_callback if window not available
+                        handle_error(f'[Error] {display_message} Please update your model via Settings > Package Settings > Claudette > Select Model.')
+                elif error_message:
+                    handle_error("[Error] {0}".format(error_message))
                 else:
                     handle_error("[Error] {0}".format(str(e)))
             except urllib.error.URLError as e:
