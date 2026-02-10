@@ -143,13 +143,11 @@ class ClaudetteClaudeAPI:
                     "type": "text",
                     "text": '''Format responses in markdown. Do not add a summary before your answer. Wrap code in fenced code blocks.
 
-Use this heading structure (h1 is reserved for user questions):
-
-## Main Topic
+If the reponse warrants being structured in sections, use this heading structure (h1 is reserved for the chat interface):
 
 Content here.
 
-### Subtopic
+## Subtopic
 
 More content.
 
