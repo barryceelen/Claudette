@@ -14,14 +14,6 @@ class ClaudetteCodeBlock:
     end_pos: int
     language: str
 
-class ClaudetteReplaceRegionCommand(sublime_plugin.TextCommand):
-    """Helper command to replace a region of text."""
-
-    def run(self, edit, start, end, text):
-        region = sublime.Region(start, end)
-        self.view.replace(edit, region, text)
-
-
 class ClaudetteChatViewListener(sublime_plugin.ViewEventListener):
     """Event listener specifically for chat views."""
 
