@@ -365,7 +365,7 @@ class ClaudetteClaudeAPI:
                 self.spinner.stop()
 
         except Exception as e:
-            sublime.error_message(str(e))
+            handle_error(f"[Error] {str(e)}")
             self.spinner.stop()
 
     def fetch_models(self):
