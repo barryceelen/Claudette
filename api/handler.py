@@ -1,10 +1,7 @@
 class ClaudetteStreamingResponseHandler:
-    def __init__(self, view, chat_view, on_complete=None):
+    def __init__(self, view, on_complete=None):
         self.view = view
-        self.chat_view = chat_view
-        self.current_response = ""
         self.on_complete = on_complete
-        self.is_completed = False
         self.line_buffer = ""
         self.at_line_start = True
 
@@ -20,8 +17,6 @@ class ClaudetteStreamingResponseHandler:
             self.view.set_read_only(True)
 
     def append_chunk(self, chunk, is_done=False):
-        self.current_response += chunk
-
         # Process chunk character by character to convert h1 headings to h2,
         # keeping h1 reserved for user questions in the symbol list.
         for char in chunk:
@@ -56,22 +51,5 @@ class ClaudetteStreamingResponseHandler:
             self._output_text(self.line_buffer)
             self.line_buffer = ""
 
-        if is_done:
-            # Mark as completed to prevent duplicate handling
-            self.is_completed = True
-            # Let on_complete callback handle adding to conversation history
-            if self.on_complete:
-                self.on_complete()
-
-    def __del__(self):
-        try:
-            # Only handle response if streaming wasn't properly completed
-            # This is a safety fallback for edge cases
-            if (hasattr(self, 'current_response') and
-                self.current_response and
-                not self.is_completed):
-                self.chat_view.handle_response(self.current_response)
-                if self.on_complete:
-                    self.on_complete()
-        except:
-            pass
+        if is_done and self.on_complete:
+            self.on_complete()
