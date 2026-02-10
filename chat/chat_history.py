@@ -52,7 +52,7 @@ def claudette_validate_and_sanitize_message(message):
     if 'role' not in message or 'content' not in message:
         return False
 
-    if message['role'] not in {'system', 'user', 'assistant'}:
+    if message['role'] not in {'user', 'assistant'}:
         return False
 
     if not isinstance(message['content'], str):

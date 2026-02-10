@@ -6,7 +6,7 @@ import urllib.error
 import ssl
 from typing import Any
 from ..statusbar.spinner import ClaudetteSpinner
-from ..constants import ANTHROPIC_VERSION, CACHE_SUPPORTED_MODEL_PREFIXES, DEFAULT_MODEL, DEFAULT_BASE_URL, MAX_TOKENS, SETTINGS_FILE, DEFAULT_VERIFY_SSL
+from ..constants import ANTHROPIC_VERSION, DEFAULT_MODEL, DEFAULT_BASE_URL, MAX_TOKENS, SETTINGS_FILE, DEFAULT_VERIFY_SSL
 from ..utils import claudette_get_api_key_value
 
 class ClaudetteClaudeAPI:
@@ -80,24 +80,6 @@ class ClaudetteClaudeAPI:
 
         return input_cost + output_cost + cache_write_cost + cache_read_cost
 
-    @staticmethod
-    def should_use_cache_control(model):
-        """Determine if cache control should be used based on model."""
-        if not model:
-            return False
-        return any(model.startswith(prefix) for prefix in CACHE_SUPPORTED_MODEL_PREFIXES)
-
-    # Model-specific token limits
-    MODEL_MAX_TOKENS = {
-        'claude-3-opus': 4096,
-        'claude-3.5-sonnet': 8192,
-        'claude-3.5-haiku': 4096,
-        'claude-3-opus': 32000,
-        'claude-3-7-sonnet': 64000,
-        'claude-sonnet-4': 64000,
-        'claude-opus-4': 32000,
-    }
-
     def stream_response(self, chunk_callback, messages, chat_view=None):
         input_tokens = 0
         output_tokens = 0
@@ -117,14 +99,6 @@ class ClaudetteClaudeAPI:
             return
 
         try:
-            # Get model-specific token limit or default to 4096
-            model_prefix = next((prefix for prefix in self.MODEL_MAX_TOKENS.keys()
-                               if self.model.startswith(prefix)), None)
-            max_tokens = min(
-                int(self.max_tokens),
-                self.MODEL_MAX_TOKENS.get(model_prefix, 4096)
-            )
-
             self.spinner.start('Fetching response')
 
             headers = {
@@ -190,14 +164,12 @@ More content.
                             "text": combined_content
                         }
 
-                        if self.should_use_cache_control(self.model):
-                            system_message['cache_control'] = {"type": "ephemeral"}
-
+                        system_message['cache_control'] = {"type": "ephemeral"}
                         system_messages.append(system_message)
 
             data = {
                 'messages': filtered_messages,
-                'max_tokens': max_tokens,
+                'max_tokens': self.max_tokens,
                 'model': self.model,
                 'stream': True,
                 'system': system_messages,
@@ -377,7 +349,7 @@ More content.
                 self.spinner.stop()
 
         except Exception as e:
-            sublime.error_message(str(e))
+            handle_error(f"[Error] {str(e)}")
             self.spinner.stop()
 
     def fetch_models(self):
