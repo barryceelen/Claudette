@@ -130,10 +130,7 @@ class ClaudetteImportChatHistoryCommand(sublime_plugin.WindowCommand):
             for message in valid_messages:
                 if message['role'] == 'user':
                     question = message['content']
-
-                    # Separator before question (except the first one)
                     prefix = "\n\n---\n\n" if not first_message else ""
-
                     content = f"{prefix}# Question\n\n{question}\n\n"
 
                     chat_view.append_text(content, scroll_to_end=False)
