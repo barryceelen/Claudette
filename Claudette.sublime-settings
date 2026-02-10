@@ -31,7 +31,13 @@
 	// WARNING: Disabling SSL verification reduces security and should only be
 	// used in trusted development environments.
 	"verify_ssl": true,
-	"max_tokens": 64000,
+	// Maximum number of output tokens per response. Must not exceed the
+	// selected model's output limit. The API will return a 400 error if this
+	// value exceeds the model's maximum. Common limits:
+	//   - Claude Opus 4.6: 128,000
+	//   - Claude Sonnet 4.5 / Haiku 4.5: 64,000
+	//   - Claude Sonnet 4 / Opus 4: 8,192
+	"max_tokens": 8192,
 	// Note that a 'Switch Model' command exists that allows you to select the
 	// model via the command palette.
 	//
