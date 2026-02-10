@@ -5,8 +5,8 @@ class ClaudetteStreamingResponseHandler:
         self.current_response = ""
         self.on_complete = on_complete
         self.is_completed = False
-        self.line_buffer = "" # Buffer for detecting h1 headings
-        self.at_line_start = True # Track if we're at start of a line
+        self.line_buffer = ""
+        self.at_line_start = True
 
     def _output_text(self, text):
         """Output text to the view."""
@@ -22,11 +22,11 @@ class ClaudetteStreamingResponseHandler:
     def append_chunk(self, chunk, is_done=False):
         self.current_response += chunk
 
-        # Process chunk character by character to detect h1 headings
+        # Process chunk character by character to convert h1 headings to h2,
+        # keeping h1 reserved for user questions in the symbol list.
         for char in chunk:
             if self.at_line_start:
                 self.line_buffer += char
-                # Check if we have "# " (h1 heading)
                 if self.line_buffer == "# ":
                     # Convert h1 to h2
                     self._output_text("## ")
@@ -48,7 +48,6 @@ class ClaudetteStreamingResponseHandler:
             else:
                 self._output_text(char)
 
-            # Track newlines for next line
             if char == '\n':
                 self.at_line_start = True
 

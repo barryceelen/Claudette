@@ -127,40 +127,22 @@ class ClaudetteImportChatHistoryCommand(sublime_plugin.WindowCommand):
             sublime_view.settings().set("line_numbers", show_line_numbers)
 
             first_message = True
-            bookmarks = []
             for message in valid_messages:
                 if message['role'] == 'user':
                     question = message['content']
-                    # Create header from question (truncate if needed)
-                    first_line = question.split('\n')[0]
-                    max_len = 60
-                    if len(first_line) > max_len:
-                        header = first_line[:max_len].rstrip() + "..."
-                    else:
-                        header = first_line
 
-                    prefix = "" if first_message else "\n\n"
-                    # Capture position for bookmark on the header line
-                    question_start = sublime_view.size()
-                    bookmark_pos = question_start + len(prefix) + 2 # After "# "
-                    bookmarks.append(sublime.Region(bookmark_pos, bookmark_pos))
+                    # Separator before question (except the first one)
+                    prefix = "\n\n---\n\n" if not first_message else ""
 
-                    content = f"{prefix}# {header}\n\n"
-                    # Include full question if it was truncated or multi-line
-                    if header != question:
-                        content += f"{question}\n\n"
+                    content = f"{prefix}# Question\n\n{question}\n\n"
 
                     chat_view.append_text(content, scroll_to_end=False)
                     first_message = False
                 elif message['role'] == 'assistant':
                     chat_view.append_text(
-                        f"{message['content']}\n",
+                        f"# Claude's Response\n\n{message['content']}\n",
                         scroll_to_end=False
                     )
-
-            # Add bookmarks for all questions
-            if bookmarks:
-                sublime_view.add_regions("bookmarks", bookmarks, "bookmarks", "bookmark", sublime.HIDDEN | sublime.PERSISTENT)
 
             # Store the conversation history in the view's settings
             sublime_view.settings().set('claudette_conversation_json', json.dumps(valid_messages))

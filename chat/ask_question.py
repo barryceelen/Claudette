@@ -134,20 +134,10 @@ class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
             if not self.chat_view:
                 return
 
-            # Create header from question (truncate if needed)
-            first_line = question.split('\n')[0]
-            max_len = 60
-            if len(first_line) > max_len:
-                header = first_line[:max_len].rstrip() + "..."
-            else:
-                header = first_line
+            # Separator before question (except the first one)
+            message = "\n\n---\n\n" if self.chat_view.get_size() > 0 else ""
 
-            message = "\n\n" if self.chat_view.get_size() > 0 else ""
-            message += f"# {header}\n\n"
-
-            # Include full question if it was truncated or multi-line
-            if header != question:
-                message += f"{question}\n\n"
+            message += f"# Question\n\n{question}\n\n"
 
             if code.strip():
                 message += f"**Selected Code**\n\n```\n{code}\n```\n\n"
@@ -167,12 +157,8 @@ class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
 
             self.chat_view.append_text(message)
 
-            # Add a bookmark at the header line
-            existing_bookmarks = view.get_regions("bookmarks")
-            prefix_len = 2 if question_start > 0 else 0
-            bookmark_pos = question_start + prefix_len + 2 # After "# "
-            existing_bookmarks.append(sublime.Region(bookmark_pos, bookmark_pos))
-            view.add_regions("bookmarks", existing_bookmarks, "bookmarks", "bookmark", sublime.HIDDEN | sublime.PERSISTENT)
+            # Add response heading before streaming begins
+            self.chat_view.append_text("# Claude's Response\n\n")
 
             if self.chat_view.get_size() > 0:
                 self.chat_view.focus()
