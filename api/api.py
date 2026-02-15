@@ -6,7 +6,7 @@ import urllib.error
 import ssl
 from typing import Any
 from ..statusbar.spinner import ClaudetteSpinner
-from ..constants import ANTHROPIC_VERSION, CACHE_SUPPORTED_MODEL_PREFIXES, DEFAULT_MODEL, DEFAULT_BASE_URL, MAX_TOKENS, SETTINGS_FILE, DEFAULT_VERIFY_SSL
+from ..constants import ANTHROPIC_VERSION, DEFAULT_MODEL, DEFAULT_BASE_URL, MAX_TOKENS, SETTINGS_FILE, DEFAULT_VERIFY_SSL
 from ..utils import claudette_get_api_key_value
 
 class ClaudetteClaudeAPI:
@@ -84,24 +84,6 @@ class ClaudetteClaudeAPI:
 
         return input_cost + output_cost + cache_write_cost + cache_read_cost
 
-    @staticmethod
-    def should_use_cache_control(model):
-        """Determine if cache control should be used based on model."""
-        if not model:
-            return False
-        return any(model.startswith(prefix) for prefix in CACHE_SUPPORTED_MODEL_PREFIXES)
-
-    # Model-specific token limits
-    MODEL_MAX_TOKENS = {
-        'claude-3-opus': 4096,
-        'claude-3.5-sonnet': 8192,
-        'claude-3.5-haiku': 4096,
-        'claude-3-opus': 32000,
-        'claude-3-7-sonnet': 64000,
-        'claude-sonnet-4': 64000,
-        'claude-opus-4': 32000,
-    }
-
     def stream_response(self, chunk_callback, messages, chat_view=None):
         input_tokens = 0
         output_tokens = 0
@@ -121,14 +103,6 @@ class ClaudetteClaudeAPI:
             return
 
         try:
-            # Get model-specific token limit or default to 4096
-            model_prefix = next((prefix for prefix in self.MODEL_MAX_TOKENS.keys()
-                               if self.model.startswith(prefix)), None)
-            max_tokens = min(
-                int(self.max_tokens),
-                self.MODEL_MAX_TOKENS.get(model_prefix, 4096)
-            )
-
             self.spinner.start('Fetching response')
 
             headers = {
@@ -151,7 +125,19 @@ class ClaudetteClaudeAPI:
             system_messages = [
                 {
                     "type": "text",
-                    "text": 'Wrap all code examples in a markdown code block. Ensure each code block is complete and self-contained.',
+                    "text": '''Format responses in markdown. Do not add a summary before your answer. Wrap code in fenced code blocks.
+
+If the reponse warrants being structured in sections, use this heading structure (h1 is reserved for the chat interface):
+
+Content here.
+
+## Subtopic
+
+More content.
+
+```python
+# code example
+```''',
                 }
             ]
 
@@ -188,9 +174,7 @@ class ClaudetteClaudeAPI:
                             "text": combined_content
                         }
 
-                        if self.should_use_cache_control(self.model):
-                            system_message['cache_control'] = {"type": "ephemeral"}
-
+                        system_message['cache_control'] = {"type": "ephemeral"}
                         system_messages.append(system_message)
 
             # When thinking is enabled, temperature must be 1.0
@@ -198,7 +182,7 @@ class ClaudetteClaudeAPI:
 
             data = {
                 'messages': filtered_messages,
-                'max_tokens': max_tokens,
+                'max_tokens': self.max_tokens,
                 'model': self.model,
                 'stream': True,
                 'system': system_messages,
@@ -357,58 +341,53 @@ class ClaudetteClaudeAPI:
                 error_content = e.read().decode('utf-8')
                 print("Claude API Error Content:", error_content)
 
-                # Check if it's a 404 error (model not found)
-                if e.code == 404:
-                    try:
-                        error_data = json.loads(error_content)
-                        error_type = error_data.get('error', {}).get('type', '')
-                        error_message = error_data.get('error', {}).get('message', '')
+                # Try to parse the API error message from the response body
+                error_type = ''
+                error_message = ''
+                try:
+                    error_data = json.loads(error_content)
+                    error_type = error_data.get('error', {}).get('type', '')
+                    error_message = error_data.get('error', {}).get('message', '')
+                except (json.JSONDecodeError, AttributeError, KeyError):
+                    pass
 
-                        # Check if the error is about a model not being found
-                        if error_type == 'not_found_error' and error_message.startswith('model:'):
-                            # Extract the model name from the error message
-                            # Format: "model: claude-sonnet-4-5-latest"
-                            error_model = error_message.replace('model:', '').strip()
+                # Check if it's a 404 model-not-found error
+                if e.code == 404 and error_type == 'not_found_error' and error_message.startswith('model:'):
+                    # Extract the model name from the error message
+                    # Format: "model: claude-sonnet-4-5-latest"
+                    error_model = error_message.replace('model:', '').strip()
 
-                            # Compare with the currently selected model
-                            if error_model == self.model:
-                                # Get window from chat_view (which is a sublime.View)
-                                window = None
-                                if chat_view:
-                                    window = chat_view.window()
+                    display_message = f'The "{error_model}" model does not exist.'
 
-                                if window:
-                                    from ..utils import claudette_chat_status_message
-                                    from ..chat.chat_view import ClaudetteChatView
+                    # Get window from chat_view (which is a sublime.View)
+                    window = None
+                    if chat_view:
+                        window = chat_view.window()
 
-                                    # Display the error message and get the end position
-                                    message_end_position = claudette_chat_status_message(
-                                        window,
-                                        f'The "{error_model}" model cannot be found.',
-                                        "⚠️"
-                                    )
+                    if window:
+                        from ..utils import claudette_chat_status_message
+                        from ..chat.chat_view import ClaudetteChatView
 
-                                    # Add a button to open the select model panel
-                                    if message_end_position >= 0:
-                                        try:
-                                            chat_view_instance = ClaudetteChatView.get_instance(window, self.settings)
-                                            if chat_view_instance:
-                                                chat_view_instance.add_select_model_button(message_end_position)
-                                        except Exception as e:
-                                            print(f"Error adding select model button: {str(e)}")
-                                else:
-                                    # Fallback to chunk_callback if window not available
-                                    handle_error(f'[Error] The "{error_model}" model cannot be found. Please update your model via Settings > Package Settings > Claudette > Select Model.')
-                            else:
-                                # Model in error doesn't match current model, show generic error
-                                handle_error("[Error] {0}".format(str(e)))
-                        else:
-                            handle_error("[Error] {0}".format(str(e)))
-                    except (json.JSONDecodeError, AttributeError, KeyError):
-                        # If we can't parse the error, show generic 404 error
-                        handle_error("[Error] {0}".format(str(e)))
-                elif e.code == 401:
-                    handle_error("[Error] {0}".format(str(e)))
+                        # Display the error message and get the end position
+                        message_end_position = claudette_chat_status_message(
+                            window,
+                            display_message,
+                            "⚠️"
+                        )
+
+                        # Add a button to open the select model panel
+                        if message_end_position >= 0:
+                            try:
+                                chat_view_instance = ClaudetteChatView.get_instance(window, self.settings)
+                                if chat_view_instance:
+                                    chat_view_instance.add_select_model_button(message_end_position)
+                            except Exception as e:
+                                print(f"Error adding select model button: {str(e)}")
+                    else:
+                        # Fallback to chunk_callback if window not available
+                        handle_error(f'[Error] {display_message} Please update your model via Settings > Package Settings > Claudette > Select Model.')
+                elif error_message:
+                    handle_error("[Error] {0}".format(error_message))
                 else:
                     handle_error("[Error] {0}".format(str(e)))
             except urllib.error.URLError as e:
@@ -417,7 +396,7 @@ class ClaudetteClaudeAPI:
                 self.spinner.stop()
 
         except Exception as e:
-            sublime.error_message(str(e))
+            handle_error(f"[Error] {str(e)}")
             self.spinner.stop()
 
     def fetch_models(self):

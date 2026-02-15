@@ -1,12 +1,25 @@
 class ClaudetteStreamingResponseHandler:
-    def __init__(self, view, chat_view, on_complete=None):
+    def __init__(self, view, chat_view=None, on_complete=None):
         self.view = view
         self.chat_view = chat_view
+        self.on_complete = on_complete
         self.current_response = ""
         self.current_thinking = ""
-        self.on_complete = on_complete
         self.is_completed = False
         self.in_thinking_block = False
+        self.line_buffer = ""
+        self.at_line_start = True
+
+    def _output_text(self, text):
+        """Output text to the view."""
+        if text:
+            self.view.set_read_only(False)
+            self.view.run_command('append', {
+                'characters': text,
+                'force': True,
+                'scroll_to_end': False
+            })
+            self.view.set_read_only(True)
 
     def append_chunk(self, chunk, is_done=False, is_thinking=False, thinking_event=None):
         """Append a chunk to the view.
@@ -20,40 +33,58 @@ class ClaudetteStreamingResponseHandler:
         if thinking_event == 'start':
             self.in_thinking_block = True
             header = "#### Thinking...\n\n"
-            self._append_to_view(header)
+            self._output_text(header)
             return
 
         if thinking_event == 'end':
             self.in_thinking_block = False
-            self._append_to_view("\n\n---\n\n")
+            self._output_text("\n\n---\n\n")
             return
 
         if is_thinking and self.in_thinking_block and chunk:
             self.current_thinking += chunk
-            self._append_to_view(chunk)
+            self._output_text(chunk)
             return
 
-        # Handle regular text content
+        # Handle regular text content with h1 to h2 conversion
         if chunk:
             self.current_response += chunk
-            self._append_to_view(chunk)
+            for char in chunk:
+                if self.at_line_start:
+                    self.line_buffer += char
+                    if self.line_buffer == "# ":
+                        # Convert h1 to h2
+                        self._output_text("## ")
+                        self.line_buffer = ""
+                        self.at_line_start = False
+                    elif self.line_buffer == "#":
+                        # Could be h1, keep buffering
+                        pass
+                    elif self.line_buffer.startswith("##"):
+                        # Already h2 or lower, output and continue
+                        self._output_text(self.line_buffer)
+                        self.line_buffer = ""
+                        self.at_line_start = False
+                    elif not "# ".startswith(self.line_buffer):
+                        # Not going to be an h1, output buffer
+                        self._output_text(self.line_buffer)
+                        self.line_buffer = ""
+                        self.at_line_start = False
+                else:
+                    self._output_text(char)
+
+                if char == '\n':
+                    self.at_line_start = True
+
+        # Flush buffer on completion
+        if is_done and self.line_buffer:
+            self._output_text(self.line_buffer)
+            self.line_buffer = ""
 
         if is_done:
-            # Mark as completed to prevent duplicate handling
             self.is_completed = True
-            # Let on_complete callback handle adding to conversation history
             if self.on_complete:
                 self.on_complete()
-
-    def _append_to_view(self, text):
-        """Append text directly to the view."""
-        self.view.set_read_only(False)
-        self.view.run_command('append', {
-            'characters': text,
-            'force': True,
-            'scroll_to_end': True
-        })
-        self.view.set_read_only(True)
 
     def get_thinking_content(self):
         """Return the accumulated thinking content."""
@@ -69,9 +100,11 @@ class ClaudetteStreamingResponseHandler:
             # This is a safety fallback for edge cases
             if (hasattr(self, 'current_response') and
                 self.current_response and
-                not self.is_completed):
+                not self.is_completed and
+                hasattr(self, 'chat_view') and
+                self.chat_view):
                 self.chat_view.handle_response(self.current_response, self.current_thinking)
                 if self.on_complete:
                     self.on_complete()
-        except:
+        except Exception:
             pass

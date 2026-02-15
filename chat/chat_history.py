@@ -52,7 +52,7 @@ def claudette_validate_and_sanitize_message(message):
     if 'role' not in message or 'content' not in message:
         return False
 
-    if message['role'] not in {'system', 'user', 'assistant'}:
+    if message['role'] not in {'user', 'assistant'}:
         return False
 
     if not isinstance(message['content'], str):
@@ -129,15 +129,15 @@ class ClaudetteImportChatHistoryCommand(sublime_plugin.WindowCommand):
             first_message = True
             for message in valid_messages:
                 if message['role'] == 'user':
-                    prefix = "" if first_message else "\n\n"
-                    chat_view.append_text(
-                        f"{prefix}## Question\n\n{message['content']}\n\n### Claude's Response\n\n",
-                        scroll_to_end=False
-                    )
+                    question = message['content']
+                    prefix = "\n\n---\n\n" if not first_message else ""
+                    content = f"{prefix}# Question\n\n{question}\n\n"
+
+                    chat_view.append_text(content, scroll_to_end=False)
                     first_message = False
                 elif message['role'] == 'assistant':
                     chat_view.append_text(
-                        f"{message['content']}\n",
+                        f"# Claude's Response\n\n{message['content']}\n",
                         scroll_to_end=False
                     )
 
@@ -211,6 +211,17 @@ class ClaudetteExportChatHistoryCommand(sublime_plugin.WindowCommand):
             sublime.error_message(f"Could not save chat history - {str(e)}")
 
 class ClaudetteClearChatHistoryCommand(sublime_plugin.TextCommand):
+    def is_enabled(self):
+        window = sublime.active_window()
+        if not window:
+            return False
+
+        for view in window.views():
+            if (view.settings().get('claudette_is_chat_view', False) and
+                view.settings().get('claudette_is_current_chat', False)):
+                return True
+        return False
+
     def run(self, edit):
         window = sublime.active_window()
         if not window:
@@ -230,5 +241,3 @@ class ClaudetteClearChatHistoryCommand(sublime_plugin.TextCommand):
 
             claudette_chat_status_message(window, "Chat history cleared", "✅")
             sublime.status_message("Chat history cleared")
-        else:
-            sublime.status_message("No active chat view found")

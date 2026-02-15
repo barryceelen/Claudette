@@ -134,13 +134,12 @@ class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
             if not self.chat_view:
                 return
 
-            message = "\n\n" if self.chat_view.get_size() > 0 else ""
-            message += f"## Question\n\n{question}\n\n"
+            message = "\n\n---\n\n" if self.chat_view.get_size() > 0 else ""
+
+            message += f"# Question\n\n{question}\n\n"
 
             if code.strip():
-                message += f"### Selected Code\n\n```\n{code}\n```\n\n"
-
-            message += "### Claude's Response\n\n"
+                message += f"**Selected Code**\n\n```\n{code}\n```\n\n"
 
             user_message = question
             if code.strip():
@@ -148,10 +147,53 @@ class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
 
             conversation = self.chat_view.handle_question(user_message)
 
+            # Capture position before appending
+            question_start = self.chat_view.view.size()
+
+            # Save current selection before appending
+            view = self.chat_view.view
+            saved_selection = [(r.a, r.b) for r in view.sel()]
+
             self.chat_view.append_text(message)
+
+            # Add response heading before streaming begins
+            self.chat_view.append_text("# Claude's Response\n\n")
 
             if self.chat_view.get_size() > 0:
                 self.chat_view.focus()
+
+            def smooth_scroll_to_question():
+                target_pos = view.text_to_layout(question_start)
+                current_pos = view.viewport_position()
+                distance_y = target_pos[1] - current_pos[1]
+                steps = 20
+                step_delay = 15 # ms between steps
+
+                def scroll_step(step):
+                    if step >= steps:
+                        # Final position to ensure accuracy
+                        view.set_viewport_position(target_pos, animate=False)
+                        # Restore selection/cursor position
+                        view.sel().clear()
+                        if saved_selection:
+                            for a, b in saved_selection:
+                                view.sel().add(sublime.Region(a, b))
+                        else:
+                            view.sel().add(sublime.Region(question_start, question_start))
+                        return
+
+                    # Ease-out animation (starts fast, slows down)
+                    progress = step / steps
+                    eased = 1 - (1 - progress) ** 3 # Cubic ease-out
+
+                    new_y = current_pos[1] + (distance_y * eased)
+                    view.set_viewport_position((current_pos[0], new_y), animate=False)
+
+                    sublime.set_timeout(lambda: scroll_step(step + 1), step_delay)
+
+                scroll_step(0)
+
+            sublime.set_timeout(smooth_scroll_to_question, 50)
 
             api = ClaudetteClaudeAPI()
 
