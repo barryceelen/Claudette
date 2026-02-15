@@ -44,8 +44,26 @@ def claudette_get_current_directory(window):
         return os.path.dirname(view.file_name())
     return last_dir
 
+def _sanitize_assistant_content_blocks(content_list):
+    """Return a sanitized list of blocks for API: keep thinking (with signature), redacted_thinking (with data), text."""
+    if not isinstance(content_list, list):
+        return None
+    sanitized = []
+    for block in content_list:
+        if not isinstance(block, dict):
+            continue
+        kind = block.get('type')
+        if kind == 'thinking' and block.get('signature'):
+            sanitized.append(block)
+        elif kind == 'redacted_thinking' and block.get('data') is not None:
+            sanitized.append(block)
+        elif kind == 'text' and block.get('text') is not None:
+            sanitized.append(block)
+    return sanitized if sanitized else None
+
+
 def claudette_validate_and_sanitize_message(message):
-    """Validate a single message object and remove disallowed items"""
+    """Validate a single message and sanitize content. Accepts string or list content for assistant (thinking blocks)."""
     if not isinstance(message, dict):
         return False
 
@@ -55,17 +73,27 @@ def claudette_validate_and_sanitize_message(message):
     if message['role'] not in {'user', 'assistant'}:
         return False
 
-    if not isinstance(message['content'], str):
-        return False
+    content = message['content']
+    role = message['role']
 
-    cleaned_message = {
-        'role': message['role'],
-        'content': message['content']
-    }
+    if role == 'user':
+        if not isinstance(content, str):
+            return False
+        cleaned_message = {'role': role, 'content': content}
+    else:
+        # assistant: content may be string or list of blocks (thinking + text)
+        if isinstance(content, str):
+            cleaned_message = {'role': role, 'content': content}
+        elif isinstance(content, list):
+            sanitized = _sanitize_assistant_content_blocks(content)
+            if not sanitized:
+                return False
+            cleaned_message = {'role': role, 'content': sanitized}
+        else:
+            return False
 
     message.clear()
     message.update(cleaned_message)
-
     return True
 
 class ClaudetteImportChatHistoryCommand(sublime_plugin.WindowCommand):
@@ -136,8 +164,23 @@ class ClaudetteImportChatHistoryCommand(sublime_plugin.WindowCommand):
                     chat_view.append_text(content, scroll_to_end=False)
                     first_message = False
                 elif message['role'] == 'assistant':
+                    body = message['content']
+                    if isinstance(body, list):
+                        parts = []
+                        for block in body:
+                            if not isinstance(block, dict):
+                                continue
+                            if block.get('type') == 'thinking':
+                                parts.append("**Thinking...**\n\n" + (block.get('thinking') or '') + "\n\n---\n\n")
+                            elif block.get('type') == 'redacted_thinking':
+                                parts.append("*(Reasoning encrypted for safety.)*\n\n---\n\n")
+                            elif block.get('type') == 'text':
+                                parts.append(block.get('text', ''))
+                        response_text = "".join(parts) if parts else ""
+                    else:
+                        response_text = body
                     chat_view.append_text(
-                        f"# Claude's Response\n\n{message['content']}\n",
+                        f"# Claude's Response\n\n{response_text}\n",
                         scroll_to_end=False
                     )
 

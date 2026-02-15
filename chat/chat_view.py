@@ -162,22 +162,25 @@ class ClaudetteChatView:
         self.add_to_conversation("user", question)
         return self.get_conversation_history()
 
-    def handle_response(self, response: str, thinking: str = None):
+    def handle_response(self, response: str, thinking_blocks=None, thinking_block: dict = None):
         """Handle the Claude response by adding it to the conversation history.
 
         Args:
             response: The text response content
-            thinking: Optional thinking content from extended thinking mode
+            thinking_blocks: Optional list of thinking/redacted_thinking blocks for API history.
+                Each block is {"type": "thinking", "thinking": "...", "signature": "..."} or
+                {"type": "redacted_thinking", "data": "..."}. Order is preserved.
+            thinking_block: Deprecated; single block. Normalized to one-element list if provided.
         """
-        if thinking:
-            # Use content array format for responses with thinking
-            content = [
-                {"type": "thinking", "thinking": thinking},
-                {"type": "text", "text": response}
-            ]
+        blocks = None
+        if thinking_blocks is not None and isinstance(thinking_blocks, list) and len(thinking_blocks) > 0:
+            blocks = thinking_blocks
+        elif thinking_block is not None and isinstance(thinking_block, dict):
+            blocks = [thinking_block]
+        if blocks:
+            content = list(blocks) + [{"type": "text", "text": response}]
             self.add_to_conversation("assistant", content)
         else:
-            # Use simple string format for regular responses
             self.add_to_conversation("assistant", response)
 
     def append_text(self, text, scroll_to_end=False):

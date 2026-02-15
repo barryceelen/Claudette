@@ -207,10 +207,9 @@ class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
 
             def on_complete():
                 # Add the response to conversation history after streaming is complete
-                # Use handler's tracked content for accuracy (includes thinking separately)
-                thinking_content = handler.get_thinking_content()
+                thinking_blocks = handler.get_thinking_blocks()
                 response_content = handler.get_response_content()
-                self.chat_view.handle_response(response_content, thinking_content)
+                self.chat_view.handle_response(response_content, thinking_blocks=thinking_blocks)
                 self.chat_view.on_streaming_complete()
 
             handler.on_complete = on_complete

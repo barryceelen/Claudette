@@ -9,6 +9,40 @@ from ..statusbar.spinner import ClaudetteSpinner
 from ..constants import ANTHROPIC_VERSION, DEFAULT_MODEL, DEFAULT_BASE_URL, MAX_TOKENS, SETTINGS_FILE, DEFAULT_VERIFY_SSL
 from ..utils import claudette_get_api_key_value
 
+# Valid effort values for adaptive thinking (Opus 4.6). Default "high" if omitted.
+VALID_EFFORT = frozenset(('low', 'medium', 'high', 'max'))
+
+# Minimum thinking budget for manual mode; budget must be < max_tokens.
+THINKING_BUDGET_MIN = 1024
+
+
+def _is_thinking_related_400(error_body_str):
+    """Return True if the API error indicates thinking/adaptive/output_config is invalid."""
+    try:
+        data = json.loads(error_body_str)
+        error = data.get('error') or {}
+        msg = (error.get('message') or '').lower()
+        typ = (error.get('type') or '').lower()
+        for token in ('thinking', 'adaptive', 'budget_tokens', 'effort', 'output_config'):
+            if token in msg or token in typ:
+                return True
+        return False
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        return False
+
+
+def _apply_thinking_mode(data, mode, thinking_effort, thinking_budget_tokens, max_tokens):
+    """Set thinking and optional output_config on data by mode: 'adaptive', 'manual', or 'none'."""
+    if mode is None or mode == 'none':
+        return
+    if mode == 'adaptive':
+        data['thinking'] = {'type': 'adaptive'}
+        data['output_config'] = {'effort': thinking_effort}
+    elif mode == 'manual':
+        budget = max(THINKING_BUDGET_MIN, min(thinking_budget_tokens, max_tokens - 1))
+        data['thinking'] = {'type': 'enabled', 'budget_tokens': budget}
+
+
 class ClaudetteClaudeAPI:
     def __init__(self):
         self.settings = sublime.load_settings(SETTINGS_FILE)
@@ -30,6 +64,8 @@ class ClaudetteClaudeAPI:
         thinking_settings = self.settings.get('thinking', {})
         self.thinking_enabled = thinking_settings.get('enabled', False)
         self.thinking_budget_tokens = thinking_settings.get('budget_tokens', 10000)
+        effort = thinking_settings.get('effort', 'high')
+        self.thinking_effort = effort if effort in VALID_EFFORT else 'high'
 
     def _get_ssl_context(self):
         """Create and return an SSL context based on verify_ssl setting."""
@@ -120,7 +156,22 @@ class ClaudetteClaudeAPI:
                     filtered_messages.append(msg)
                 # Handle content array (for thinking responses)
                 elif isinstance(content, list) and len(content) > 0:
-                    filtered_messages.append(msg)
+                    # Preserve order; keep thinking (with signature), redacted_thinking (with data), and other blocks
+                    sanitized = []
+                    for block in content:
+                        if not isinstance(block, dict):
+                            sanitized.append(block)
+                            continue
+                        if block.get('type') == 'thinking':
+                            if block.get('signature'):
+                                sanitized.append(block)
+                        elif block.get('type') == 'redacted_thinking':
+                            if block.get('data') is not None:
+                                sanitized.append(block)
+                        else:
+                            sanitized.append(block)
+                    if sanitized:
+                        filtered_messages.append({'role': msg['role'], 'content': sanitized})
 
             system_messages = [
                 {
@@ -180,7 +231,7 @@ More content.
             # When thinking is enabled, temperature must be 1.0
             temperature = 1.0 if self.thinking_enabled else self.get_valid_temperature(self.temperature)
 
-            data = {
+            base_data = {
                 'messages': filtered_messages,
                 'max_tokens': self.max_tokens,
                 'model': self.model,
@@ -189,209 +240,256 @@ More content.
                 'temperature': temperature
             }
 
-            # Add thinking parameter when enabled
-            if self.thinking_enabled:
-                data['thinking'] = {
-                    'type': 'enabled',
-                    'budget_tokens': self.thinking_budget_tokens
-                }
+            # Try-and-fallback for thinking: adaptive -> manual -> none (we do not want to use a hardcoded list of models thqt support thinking)
+            if not self.thinking_enabled:
+                modes_to_try = [None]
+            else:
+                cache = {}
+                if chat_view and hasattr(chat_view, 'settings'):
+                    cache = dict(chat_view.settings().get('claudette_thinking_mode_cache', {}))
+                cached_mode = cache.get(self.model)
+                modes_to_try = [cached_mode] if cached_mode is not None else ['adaptive', 'manual', 'none']
 
-            req = urllib.request.Request(
-                urllib.parse.urljoin(self.base_url, 'messages'),
-                data=json.dumps(data).encode('utf-8'),
-                headers=headers,
-                method='POST'
-            )
+            ssl_context = self._get_ssl_context()
+            stream_done = False
 
-            try:
-                ssl_context = self._get_ssl_context()
-                current_block_type = None  # Track current content block type ('thinking' or 'text')
-                thinking_started = False  # Track if we've started a thinking block
+            for mode in modes_to_try:
+                data = dict(base_data)
+                if self.thinking_enabled:
+                    _apply_thinking_mode(
+                        data, mode,
+                        self.thinking_effort,
+                        self.thinking_budget_tokens,
+                        self.max_tokens
+                    )
 
-                with urllib.request.urlopen(req, context=ssl_context) as response:
-                    for line in response:
-                        if not line or line.isspace():
-                            continue
+                req = urllib.request.Request(
+                    urllib.parse.urljoin(self.base_url, 'messages'),
+                    data=json.dumps(data).encode('utf-8'),
+                    headers=headers,
+                    method='POST'
+                )
 
+                try:
+                    response = urllib.request.urlopen(req, context=ssl_context)
+                except urllib.error.HTTPError as e:
+                    if e.code != 400:
+                        error_content = e.read().decode('utf-8')
                         try:
-                            chunk = line.decode('utf-8')
-                            if not chunk.startswith('data: '):
+                            error_data = json.loads(error_content)
+                            error_message = error_data.get('error', {}).get('message', '')
+                        except (json.JSONDecodeError, AttributeError, KeyError):
+                            error_message = ''
+                        if error_message:
+                            handle_error("[Error] {0}".format(error_message))
+                        else:
+                            handle_error("[Error] {0}".format(str(e)))
+                        stream_done = True
+                        break
+                    error_content = e.read().decode('utf-8')
+                    if _is_thinking_related_400(error_content) and mode != 'none':
+                        continue  # Retry with next mode
+                    # Non-thinking 400 or last mode failed: show error
+                    try:
+                        error_data = json.loads(error_content)
+                        error_message = error_data.get('error', {}).get('message', str(e))
+                    except (json.JSONDecodeError, AttributeError, KeyError):
+                        error_message = str(e)
+                    handle_error("[Error] {0}".format(error_message))
+                    stream_done = True
+                    break
+                except urllib.error.URLError as e:
+                    handle_error(f"[Error] {str(e)}")
+                    stream_done = True
+                    break
+
+                # Success: consume stream
+                thinking_used = self.thinking_enabled and mode in ('adaptive', 'manual')
+                current_block_type = None
+                thinking_started = False
+
+                try:
+                    with response:
+                        for line in response:
+                            if not line or line.isspace():
                                 continue
 
-                            chunk = chunk[6:] # Remove 'data: ' prefix
-                            if chunk.strip() == '[DONE]':
-                                break
-
-                            data = json.loads(chunk)
-
-                            # Get initial input tokens from message_start
-                            if data.get('type') == 'message_start':
-                                if 'message' in data and 'usage' in data['message']:
-                                    usage = data['message']['usage']
-                                    input_tokens = usage.get('input_tokens', 0)
-                                    cache_read_tokens = usage.get('cache_read_input_tokens', 0)
-                                    cache_write_tokens = usage.get('cache_write_input_tokens', 0)
-                                    if cache_read_tokens > 0:
-                                        cache_info = f" (cache read: {cache_read_tokens:,})"
-                                    elif cache_write_tokens > 0:
-                                        cache_info = f" (cache write: {cache_write_tokens:,})"
-
-                            # Handle content block start - identify thinking vs text blocks
-                            if data.get('type') == 'content_block_start':
-                                block = data.get('content_block', {})
-                                current_block_type = block.get('type')  # 'thinking' or 'text'
-
-                                # Start thinking section with header
-                                if current_block_type == 'thinking' and not thinking_started:
-                                    thinking_started = True
-                                    sublime.set_timeout(
-                                        lambda: chunk_callback("", is_done=False, is_thinking=True, thinking_event='start'),
-                                        0
-                                    )
-                                # When text block starts after thinking, signal transition
-                                elif current_block_type == 'text' and thinking_started:
-                                    sublime.set_timeout(
-                                        lambda: chunk_callback("", is_done=False, is_thinking=True, thinking_event='end'),
-                                        0
-                                    )
-
-                            # Handle content deltas - both thinking and text
-                            if 'delta' in data:
-                                # Handle thinking deltas
-                                if 'thinking' in data['delta']:
-                                    sublime.set_timeout(
-                                        lambda text=data['delta']['thinking']: chunk_callback(text, is_done=False, is_thinking=True),
-                                        0
-                                    )
-                                # Handle text deltas
-                                elif 'text' in data['delta']:
-                                    sublime.set_timeout(
-                                        lambda text=data['delta']['text']: chunk_callback(text, is_done=False, is_thinking=False),
-                                        0
-                                    )
-
-                            # Get final output tokens from message_delta
-                            if data.get('type') == 'message_delta' and 'usage' in data:
-                                output_tokens = data['usage'].get('output_tokens', 0)
-
-                            # Send token information at the end
-                            if data.get('type') == 'message_stop':
-                                # Get cache token information
-                                cache_read_tokens = data.get('usage', {}).get('cache_read_input_tokens', 0)
-                                cache_write_tokens = data.get('usage', {}).get('cache_write_input_tokens', 0)
-
-                                # Calculate current response cost including cache operations
-                                current_cost = self.calculate_cost(
-                                    input_tokens,
-                                    output_tokens,
-                                    cache_read_tokens=cache_read_tokens,
-                                    cache_write_tokens=cache_write_tokens
-                                )
-
-                                # Format current cost
-                                current_cost_str = f"${current_cost:.4f}"
-
-                                # Update chat view's session stats
-                                if chat_view and hasattr(chat_view, 'settings'):
-                                    settings = chat_view.settings()
-
-                                    # Get current session stats from settings
-                                    session_stats = settings.get('claudette_session_stats', {
-                                        'input_tokens': 0,
-                                        'output_tokens': 0,
-                                        'cost': 0.0
-                                    })
-
-                                    # Update session totals
-                                    session_stats['input_tokens'] += input_tokens
-                                    session_stats['output_tokens'] += output_tokens
-                                    session_stats['cost'] += current_cost
-
-                                    # Save updated stats back to settings
-                                    settings.set('claudette_session_stats', session_stats)
-
-                                    session_cost_str = f"${session_stats['cost']:.4f}"
-                                else:
-                                    session_cost_str = f"${current_cost:.4f}"
-
-                                # Build status message with thinking indicator if enabled
-                                thinking_info = " (incl. thinking)" if self.thinking_enabled else ""
-                                status_message = f"Tokens: {input_tokens:,} sent, {output_tokens:,} received{thinking_info}{cache_info}."
-
-                                if session_stats['cost'] > 0:
-                                    status_message_cost = f" Cost: {current_cost_str} message, {session_cost_str} session."
-                                    status_message = status_message + status_message_cost
-
-                                # Schedule status message on main thread with a delay
-                                def show_delayed_status():
-                                    sublime.status_message(status_message)
-
-                                sublime.set_timeout(show_delayed_status, 100)
-
-                                # Signal completion
-                                sublime.set_timeout(
-                                    lambda: chunk_callback("", is_done=True, is_thinking=False),
-                                    0
-                                )
-
-                        except Exception:
-                            continue # Skip invalid chunks without error messages
-
-            except urllib.error.HTTPError as e:
-                error_content = e.read().decode('utf-8')
-                print("Claude API Error Content:", error_content)
-
-                # Try to parse the API error message from the response body
-                error_type = ''
-                error_message = ''
-                try:
-                    error_data = json.loads(error_content)
-                    error_type = error_data.get('error', {}).get('type', '')
-                    error_message = error_data.get('error', {}).get('message', '')
-                except (json.JSONDecodeError, AttributeError, KeyError):
-                    pass
-
-                # Check if it's a 404 model-not-found error
-                if e.code == 404 and error_type == 'not_found_error' and error_message.startswith('model:'):
-                    # Extract the model name from the error message
-                    # Format: "model: claude-sonnet-4-5-latest"
-                    error_model = error_message.replace('model:', '').strip()
-
-                    display_message = f'The "{error_model}" model does not exist.'
-
-                    # Get window from chat_view (which is a sublime.View)
-                    window = None
-                    if chat_view:
-                        window = chat_view.window()
-
-                    if window:
-                        from ..utils import claudette_chat_status_message
-                        from ..chat.chat_view import ClaudetteChatView
-
-                        # Display the error message and get the end position
-                        message_end_position = claudette_chat_status_message(
-                            window,
-                            display_message,
-                            "⚠️"
-                        )
-
-                        # Add a button to open the select model panel
-                        if message_end_position >= 0:
                             try:
-                                chat_view_instance = ClaudetteChatView.get_instance(window, self.settings)
-                                if chat_view_instance:
-                                    chat_view_instance.add_select_model_button(message_end_position)
-                            except Exception as e:
-                                print(f"Error adding select model button: {str(e)}")
-                    else:
-                        # Fallback to chunk_callback if window not available
-                        handle_error(f'[Error] {display_message} Please update your model via Settings > Package Settings > Claudette > Select Model.')
-                elif error_message:
-                    handle_error("[Error] {0}".format(error_message))
-                else:
-                    handle_error("[Error] {0}".format(str(e)))
-            except urllib.error.URLError as e:
-                handle_error(f"[Error] {str(e)}")
+                                chunk = line.decode('utf-8')
+                                if not chunk.startswith('data: '):
+                                    continue
+
+                                chunk = chunk[6:]  # Remove 'data: ' prefix
+                                if chunk.strip() == '[DONE]':
+                                    break
+
+                                event = json.loads(chunk)
+
+                                # Get initial input tokens from message_start
+                                if event.get('type') == 'message_start':
+                                    if 'message' in event and 'usage' in event['message']:
+                                        usage = event['message']['usage']
+                                        input_tokens = usage.get('input_tokens', 0)
+                                        cache_read_tokens = usage.get('cache_read_input_tokens', 0)
+                                        cache_write_tokens = usage.get('cache_write_input_tokens', 0)
+                                        if cache_read_tokens > 0:
+                                            cache_info = f" (cache read: {cache_read_tokens:,})"
+                                        elif cache_write_tokens > 0:
+                                            cache_info = f" (cache write: {cache_write_tokens:,})"
+
+                                # Handle content block start - thinking, redacted_thinking, or text
+                                if event.get('type') == 'content_block_start':
+                                    block = event.get('content_block', {})
+                                    current_block_type = block.get('type')
+
+                                    if current_block_type == 'thinking':
+                                        thinking_started = True
+                                        sublime.set_timeout(
+                                            lambda: chunk_callback("", is_done=False, is_thinking=True, thinking_event='start'),
+                                            0
+                                        )
+                                    elif current_block_type == 'redacted_thinking':
+                                        thinking_started = True
+                                        sublime.set_timeout(
+                                            lambda: chunk_callback(
+                                                "", is_done=False, is_thinking=False,
+                                                thinking_event='start_redacted'
+                                            ),
+                                            0
+                                        )
+                                    elif current_block_type == 'text' and thinking_started:
+                                        sublime.set_timeout(
+                                            lambda: chunk_callback("", is_done=False, is_thinking=True, thinking_event='end'),
+                                            0
+                                        )
+                                        thinking_started = False
+
+                                # Handle content block stop - close redacted_thinking block
+                                if event.get('type') == 'content_block_stop' and current_block_type == 'redacted_thinking':
+                                    sublime.set_timeout(
+                                        lambda: chunk_callback(
+                                            "", is_done=False, is_thinking=False,
+                                            thinking_event='end_redacted'
+                                        ),
+                                        0
+                                    )
+                                    current_block_type = None
+
+                                # Handle content deltas - thinking, signature, redacted data, text
+                                if 'delta' in event:
+                                    delta = event['delta']
+                                    if delta.get('type') == 'signature_delta' and 'signature' in delta:
+                                        sig = delta['signature']
+                                        sublime.set_timeout(
+                                            lambda s=sig: chunk_callback("", is_done=False, is_thinking=False, thinking_signature=s),
+                                            0
+                                        )
+                                    elif 'thinking' in delta:
+                                        sublime.set_timeout(
+                                            lambda text=delta['thinking']: chunk_callback(text, is_done=False, is_thinking=True),
+                                            0
+                                        )
+                                    elif 'data' in delta:
+                                        sublime.set_timeout(
+                                            lambda d=delta['data']: chunk_callback(
+                                                "", is_done=False, is_thinking=False,
+                                                redacted_data=d
+                                            ),
+                                            0
+                                        )
+                                    elif 'text' in delta:
+                                        sublime.set_timeout(
+                                            lambda text=delta['text']: chunk_callback(text, is_done=False, is_thinking=False),
+                                            0
+                                        )
+
+                                # Get final output tokens from message_delta
+                                if event.get('type') == 'message_delta' and 'usage' in event:
+                                    output_tokens = event['usage'].get('output_tokens', 0)
+
+                                # Send token information at the end
+                                if event.get('type') == 'message_stop':
+                                    # Get cache token information
+                                    cache_read_tokens = event.get('usage', {}).get('cache_read_input_tokens', 0)
+                                    cache_write_tokens = event.get('usage', {}).get('cache_write_input_tokens', 0)
+
+                                    # Calculate current response cost including cache operations
+                                    current_cost = self.calculate_cost(
+                                        input_tokens,
+                                        output_tokens,
+                                        cache_read_tokens=cache_read_tokens,
+                                        cache_write_tokens=cache_write_tokens
+                                    )
+
+                                    # Format current cost
+                                    current_cost_str = f"${current_cost:.4f}"
+
+                                    # Update chat view's session stats
+                                    session_stats = None
+                                    if chat_view and hasattr(chat_view, 'settings'):
+                                        settings = chat_view.settings()
+
+                                        # Get current session stats from settings
+                                        session_stats = settings.get('claudette_session_stats', {
+                                            'input_tokens': 0,
+                                            'output_tokens': 0,
+                                            'cost': 0.0
+                                        })
+
+                                        # Update session totals
+                                        session_stats['input_tokens'] += input_tokens
+                                        session_stats['output_tokens'] += output_tokens
+                                        session_stats['cost'] += current_cost
+
+                                        # Save updated stats back to settings
+                                        settings.set('claudette_session_stats', session_stats)
+
+                                        session_cost_str = f"${session_stats['cost']:.4f}"
+                                    else:
+                                        session_cost_str = f"${current_cost:.4f}"
+
+                                    # Build status message with thinking indicator if actually used
+                                    thinking_info = " (incl. thinking)" if thinking_used else ""
+                                    status_message = f"Tokens: {input_tokens:,} sent, {output_tokens:,} received{thinking_info}{cache_info}."
+
+                                    if session_stats and session_stats.get('cost', 0) > 0:
+                                        status_message_cost = f" Cost: {current_cost_str} message, {session_cost_str} session."
+                                        status_message = status_message + status_message_cost
+
+                                    # Schedule status message on main thread with a delay
+                                    def show_delayed_status():
+                                        sublime.status_message(status_message)
+
+                                    sublime.set_timeout(show_delayed_status, 100)
+
+                                    # Signal completion
+                                    sublime.set_timeout(
+                                        lambda: chunk_callback("", is_done=True, is_thinking=False),
+                                        0
+                                    )
+
+                            except Exception:
+                                continue
+
+                except Exception:
+                    pass
+                # Cache working mode for this model so next request skips failed attempts
+                if chat_view and hasattr(chat_view, 'settings') and mode is not None:
+                    cache = dict(chat_view.settings().get('claudette_thinking_mode_cache', {}))
+                    cache[self.model] = mode
+                    chat_view.settings().set('claudette_thinking_mode_cache', cache)
+                if mode == 'none' and self.thinking_enabled:
+                    sublime.set_timeout(
+                        lambda: sublime.status_message('Thinking not supported for this model; response without thinking.'),
+                        150
+                    )
+                stream_done = True
+                break
+
+            if not stream_done:
+                pass  # Error already reported in loop
+            try:
+                pass
             finally:
                 self.spinner.stop()
 

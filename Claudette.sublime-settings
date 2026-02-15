@@ -62,7 +62,9 @@
 		// Set to true to enable extended thinking mode
 		"enabled": false,
 		// Maximum tokens Claude can use for thinking (minimum 1024, recommended 10000+)
-		"budget_tokens": 10000
+		"budget_tokens": 10000,
+		// Effort for adaptive thinking (Opus 4.6): "low", "medium", "high", or "max". Omit for API default.
+		"effort": "high"
 	},
 	// Claude pricing per 1K tokens (as of December 2025)
 	"pricing": {
