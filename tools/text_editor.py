@@ -42,37 +42,58 @@ def get_allowed_roots(window, settings) -> List[str]:
 
     return roots
 
-def _find_in_context_files(path: str, context_files: Dict[str, Any]) -> Optional[str]:
+def _find_in_context_files(path: str, context_files: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
     """
-    Check if path matches a filename in context_files. Returns absolute_path if found.
+    Check if path matches a filename in context_files.
+    Returns (absolute_path, None) if exactly one match, (None, error_message) if multiple matches, (None, None) if none.
     """
     if not context_files or not path:
-        return None
+        return None, None
     filename = os.path.basename(path)
+    matches = []
     for rel_path, file_info in context_files.items():
         if isinstance(file_info, dict):
             context_filename = os.path.basename(rel_path)
             if context_filename == filename:
                 abs_path = file_info.get('absolute_path')
                 if abs_path and os.path.isfile(abs_path):
-                    return abs_path
-    return None
+                    matches.append(abs_path)
+    if len(matches) == 0:
+        return None, None
+    if len(matches) > 1:
+        paths_list = "\n".join(f"  - {p}" for p in matches)
+        return None, (
+            "Error: Multiple files named '{0}' found in chat context. "
+            "Please specify the full path. Found:\n{1}".format(filename, paths_list)
+        )
+    return matches[0], None
 
 
-def _find_in_open_views(path: str, window) -> Optional[str]:
+def _find_in_open_views(path: str, window) -> Tuple[Optional[str], bool]:
     """
-    Check if path matches a filename in open views. Returns file_name() if found.
+    Check if path matches a filename in open views. Prioritizes active view.
+    Returns (file_name, is_active_view) if found, (None, False) if not found.
     """
     if not window or not path:
-        return None
+        return None, False
     filename = os.path.basename(path)
+    active_view = window.active_view()
+    active_match = None
+    other_matches = []
     for view in window.views():
         file_name = view.file_name()
         if file_name:
             view_filename = os.path.basename(file_name)
             if view_filename == filename:
-                return file_name
-    return None
+                if view == active_view:
+                    active_match = file_name
+                else:
+                    other_matches.append(file_name)
+    if active_match:
+        return active_match, True
+    if other_matches:
+        return other_matches[0], False
+    return None, False
 
 
 def resolve_path(
@@ -102,19 +123,32 @@ def resolve_path(
     if normalized.startswith('..') or '/..' in normalized or '\\..' in normalized:
         return None, "Error: Path traversal is not allowed."
 
-    # If path is just a filename (no directory), check context files and open views first.
+    # If path is just a filename (no directory), check with priority:
+    # 1. Active view (if open)
+    # 2. Context files (single match only - error if multiple)
+    # 3. Other open views
+    # 4. Project folders (normal resolution below)
     if os.path.dirname(normalized) == '' or os.path.dirname(normalized) == '.':
-        if context_files:
-            found = _find_in_context_files(normalized, context_files)
-            if found:
-                # Verify it's under an allowed root.
+        # Priority 1: Active view
+        if window:
+            found, is_active = _find_in_open_views(normalized, window)
+            if found and is_active:
                 if ensure_under_root(found, allowed_roots):
                     return found, None
 
-        if window:
-            found = _find_in_open_views(normalized, window)
+        # Priority 2: Context files (error if multiple matches)
+        if context_files:
+            found, err = _find_in_context_files(normalized, context_files)
+            if err:
+                return None, err
             if found:
-                # Verify it's under an allowed root.
+                if ensure_under_root(found, allowed_roots):
+                    return found, None
+
+        # Priority 3: Other open views (non-active)
+        if window:
+            found, is_active = _find_in_open_views(normalized, window)
+            if found and not is_active:
                 if ensure_under_root(found, allowed_roots):
                     return found, None
 
