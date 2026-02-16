@@ -149,16 +149,16 @@ class ClaudetteContextAddFilesCommand(sublime_plugin.WindowCommand):
         message_parts = []
         if added_dirs:
             if len(added_dirs) == 1:
-                message_parts.append(f"directory '{added_dirs[0]}'")
+                message_parts.append(f"directory `{added_dirs[0]}`")
             else:
-                dir_list = "', '".join(added_dirs)
-                message_parts.append(f"directories '{dir_list}'")
+                dir_list = "`, `".join(added_dirs)
+                message_parts.append(f"directories `{dir_list}`")
         if added_files:
             if len(added_files) == 1:
-                message_parts.append(f"file '{added_files[0]}'")
+                message_parts.append(f"file `{added_files[0]}`")
             else:
-                file_list = "', '".join(added_files)
-                message_parts.append(f"files '{file_list}'")
+                file_list = "`, `".join(added_files)
+                message_parts.append(f"files `{file_list}`")
 
         message = f"Added {' and '.join(message_parts)}"
 
@@ -167,7 +167,11 @@ class ClaudetteContextAddFilesCommand(sublime_plugin.WindowCommand):
         if ignored_count > 0:
             message += f", ignored {ignored_count} files"
 
-        claudette_chat_status_message(self.window, message, "✅")
+        # Determine the path to offer for copying
+        # For single file/directory, use its path; for multiple, use the first one
+        copy_path = paths[0] if len(paths) == 1 else None
+
+        claudette_chat_status_message(self.window, message, "✅", copy_path=copy_path)
         sublime.status_message(message)
 
         if created_new_view:

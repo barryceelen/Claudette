@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 from .constants import SETTINGS_FILE
 
-def claudette_chat_status_message(window, message: str, prefix: str = "ℹ️") -> int:
+def claudette_chat_status_message(window, message: str, prefix: str = "ℹ️", copy_path: str = None) -> int:
     """
     Display a status message in the active chat view.
 
@@ -11,6 +11,7 @@ def claudette_chat_status_message(window, message: str, prefix: str = "ℹ️") 
         window: The Sublime Text window
         message (str): The status message to display
         prefix (str, optional): Icon or text prefix for the message. Defaults to "ℹ️"
+        copy_path (str, optional): If provided, adds a "Copy Path" button that copies this path to clipboard
 
     Returns:
         int: The end position of the message in the view, or -1 if no view was found
@@ -34,19 +35,31 @@ def claudette_chat_status_message(window, message: str, prefix: str = "ℹ️") 
         last_chars = current_chat_view.substr(sublime.Region(max(0, view_size - 2), view_size))
         if last_chars == '\n\n':
             # Content already ends with two newlines, don't add any newline before message
-            message = f"{prefix + ' ' if prefix else ''}{message}\n"
+            formatted_message = f"{prefix + ' ' if prefix else ''}{message}"
         elif last_chars.endswith('\n'):
             # Content ends with one newline, add one more for spacing
-            message = f"\n{prefix + ' ' if prefix else ''}{message}\n"
+            formatted_message = f"\n{prefix + ' ' if prefix else ''}{message}"
         else:
             # Content doesn't end with newline, add two for spacing
-            message = f"\n\n{prefix + ' ' if prefix else ''}{message}\n"
+            formatted_message = f"\n\n{prefix + ' ' if prefix else ''}{message}"
     else:
-        message = f"{prefix + ' ' if prefix else ''}{message}\n"
+        formatted_message = f"{prefix + ' ' if prefix else ''}{message}"
 
     current_chat_view.set_read_only(False)
     current_chat_view.run_command('append', {
-        'characters': message,
+        'characters': formatted_message,
+        'force': True,
+        'scroll_to_end': True
+    })
+
+    # Add "Copy Path" button as phantom if path is provided
+    if copy_path:
+        button_position = current_chat_view.size()
+        _add_copy_path_phantom(current_chat_view, button_position, copy_path)
+
+    # Add trailing newline
+    current_chat_view.run_command('append', {
+        'characters': '\n',
         'force': True,
         'scroll_to_end': True
     })
@@ -59,6 +72,55 @@ def claudette_chat_status_message(window, message: str, prefix: str = "ℹ️") 
     current_chat_view.set_read_only(True)
 
     return end_point
+
+
+# Store phantom sets for copy path buttons per view
+_copy_path_phantom_sets = {}
+
+
+def _add_copy_path_phantom(view, position: int, path: str):
+    """
+    Add a "Copy Path" phantom button at the specified position.
+
+    Args:
+        view: The Sublime Text view
+        position: The position in the view to add the phantom
+        path: The path to copy when the button is clicked
+    """
+    view_id = view.id()
+
+    if view_id not in _copy_path_phantom_sets:
+        _copy_path_phantom_sets[view_id] = sublime.PhantomSet(view, f"copy_path_buttons_{view_id}")
+
+    phantom_set = _copy_path_phantom_sets[view_id]
+
+    # Escape the path for use in HTML
+    escaped_path = (path
+        .replace('&', '&amp;')
+        .replace('"', '&quot;')
+        .replace('<', '&lt;')
+        .replace('>', '&gt;'))
+
+    button_html = f''' <span class="copy-path-button" style="padding-left: 8px"><a href="copy:{escaped_path}">Copy Path</a></span>'''
+
+    def on_navigate(href):
+        if href.startswith('copy:'):
+            path_to_copy = href[5:]
+            sublime.set_clipboard(path_to_copy)
+            sublime.status_message(f"File path copied to clipboard")
+
+    region = sublime.Region(position, position)
+    phantom = sublime.Phantom(
+        region,
+        button_html,
+        sublime.LAYOUT_INLINE,
+        on_navigate
+    )
+
+    # Get existing phantoms and add the new one
+    existing_phantoms = list(phantom_set.phantoms)
+    existing_phantoms.append(phantom)
+    phantom_set.update(existing_phantoms)
 
 def claudette_estimate_api_tokens(text):
     """Estimate Claude API tokens based on character count (rough approximation)."""
