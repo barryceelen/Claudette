@@ -348,6 +348,9 @@ More content.
                                 lambda s=status_label: update_status(s),
                                 0
                             )
+                            context_files = None
+                            if view_for_api and hasattr(view_for_api, 'settings'):
+                                context_files = view_for_api.settings().get('claudette_context_files')
                             result = run_text_editor_tool(
                                 block.get('id', ''),
                                 block.get('name', ''),
@@ -355,6 +358,7 @@ More content.
                                 window,
                                 settings,
                                 max_characters=max_chars,
+                                context_files=context_files,
                             )
                             tool_results.append(result)
 

@@ -6,7 +6,8 @@ and returns results for tool_result blocks.
 """
 
 import os
-from typing import Any, List, Optional, Tuple
+import sublime
+from typing import Any, Dict, List, Optional, Tuple
 
 
 def get_allowed_roots(window, settings) -> List[str]:
@@ -41,10 +42,50 @@ def get_allowed_roots(window, settings) -> List[str]:
 
     return roots
 
+def _find_in_context_files(path: str, context_files: Dict[str, Any]) -> Optional[str]:
+    """
+    Check if path matches a filename in context_files. Returns absolute_path if found.
+    """
+    if not context_files or not path:
+        return None
+    filename = os.path.basename(path)
+    for rel_path, file_info in context_files.items():
+        if isinstance(file_info, dict):
+            context_filename = os.path.basename(rel_path)
+            if context_filename == filename:
+                abs_path = file_info.get('absolute_path')
+                if abs_path and os.path.isfile(abs_path):
+                    return abs_path
+    return None
 
-def resolve_path(path: str, allowed_roots: List[str]) -> Tuple[Optional[str], Optional[str]]:
+
+def _find_in_open_views(path: str, window) -> Optional[str]:
+    """
+    Check if path matches a filename in open views. Returns file_name() if found.
+    """
+    if not window or not path:
+        return None
+    filename = os.path.basename(path)
+    for view in window.views():
+        file_name = view.file_name()
+        if file_name:
+            view_filename = os.path.basename(file_name)
+            if view_filename == filename:
+                return file_name
+    return None
+
+
+def resolve_path(
+    path: str,
+    allowed_roots: List[str],
+    context_files: Optional[Dict[str, Any]] = None,
+    window=None,
+) -> Tuple[Optional[str], Optional[str]]:
     """
     Resolve a path (relative or absolute) to an absolute path under an allowed root.
+
+    First checks context files and open views if path is just a filename (no directory).
+    Then falls back to normal resolution against allowed roots.
 
     Returns (resolved_absolute_path, None) on success, or (None, error_message) on failure.
     Rejects path traversal and paths outside allowed roots.
@@ -61,6 +102,23 @@ def resolve_path(path: str, allowed_roots: List[str]) -> Tuple[Optional[str], Op
     if normalized.startswith('..') or '/..' in normalized or '\\..' in normalized:
         return None, "Error: Path traversal is not allowed."
 
+    # If path is just a filename (no directory), check context files and open views first.
+    if os.path.dirname(normalized) == '' or os.path.dirname(normalized) == '.':
+        if context_files:
+            found = _find_in_context_files(normalized, context_files)
+            if found:
+                # Verify it's under an allowed root.
+                if ensure_under_root(found, allowed_roots):
+                    return found, None
+
+        if window:
+            found = _find_in_open_views(normalized, window)
+            if found:
+                # Verify it's under an allowed root.
+                if ensure_under_root(found, allowed_roots):
+                    return found, None
+
+    # Normal resolution: absolute paths or relative paths against allowed roots.
     if os.path.isabs(normalized):
         for root in allowed_roots:
             try:
@@ -97,13 +155,15 @@ def execute_view(
     allowed_roots: List[str],
     view_range: Optional[List[int]] = None,
     max_characters: Optional[int] = None,
+    context_files: Optional[Dict[str, Any]] = None,
+    window=None,
 ) -> Tuple[str, bool]:
     """
     Execute the view command: read file or list directory.
 
     Returns (content_string, is_error).
     """
-    resolved, err = resolve_path(path, allowed_roots)
+    resolved, err = resolve_path(path, allowed_roots, context_files=context_files, window=window)
     if err:
         return err, True
 
@@ -157,13 +217,15 @@ def execute_str_replace(
     old_str: str,
     new_str: str,
     allowed_roots: List[str],
+    context_files: Optional[Dict[str, Any]] = None,
+    window=None,
 ) -> Tuple[str, bool]:
     """
     Replace old_str with new_str in file exactly once.
 
     Returns (result_message, is_error).
     """
-    resolved, err = resolve_path(path, allowed_roots)
+    resolved, err = resolve_path(path, allowed_roots, context_files=context_files, window=window)
     if err:
         return err, True
 
@@ -201,13 +263,19 @@ def execute_str_replace(
     return "Successfully replaced text at exactly one location.", False
 
 
-def execute_create(path: str, file_text: str, allowed_roots: List[str]) -> Tuple[str, bool]:
+def execute_create(
+    path: str,
+    file_text: str,
+    allowed_roots: List[str],
+    context_files: Optional[Dict[str, Any]] = None,
+    window=None,
+) -> Tuple[str, bool]:
     """
     Create a new file with the given content.
 
     Returns (result_message, is_error).
     """
-    resolved, err = resolve_path(path, allowed_roots)
+    resolved, err = resolve_path(path, allowed_roots, context_files=context_files, window=window)
     if err:
         return err, True
 
@@ -241,13 +309,15 @@ def execute_insert(
     insert_line: int,
     insert_text: str,
     allowed_roots: List[str],
+    context_files: Optional[Dict[str, Any]] = None,
+    window=None,
 ) -> Tuple[str, bool]:
     """
     Insert text after the given line number (0 = beginning of file).
 
     Returns (result_message, is_error).
     """
-    resolved, err = resolve_path(path, allowed_roots)
+    resolved, err = resolve_path(path, allowed_roots, context_files=context_files, window=window)
     if err:
         return err, True
 
@@ -293,6 +363,7 @@ def run_text_editor_tool(
     window,
     settings,
     max_characters: Optional[int] = None,
+    context_files: Optional[Dict[str, Any]] = None,
 ) -> dict:
     """
     Execute a single text editor tool call and return a tool_result block.
@@ -320,6 +391,8 @@ def run_text_editor_tool(
             allowed_roots,
             view_range=view_range,
             max_characters=max_characters,
+            context_files=context_files,
+            window=window,
         )
         return {
             'type': 'tool_result',
@@ -331,7 +404,10 @@ def run_text_editor_tool(
     if command == 'str_replace':
         old_str = input_params.get('old_str', '')
         new_str = input_params.get('new_str', '')
-        content, is_error = execute_str_replace(path, old_str, new_str, allowed_roots)
+        content, is_error = execute_str_replace(
+            path, old_str, new_str, allowed_roots,
+            context_files=context_files, window=window
+        )
         return {
             'type': 'tool_result',
             'tool_use_id': tool_use_id,
@@ -341,7 +417,10 @@ def run_text_editor_tool(
 
     if command == 'create':
         file_text = input_params.get('file_text', '')
-        content, is_error = execute_create(path, file_text, allowed_roots)
+        content, is_error = execute_create(
+            path, file_text, allowed_roots,
+            context_files=context_files, window=window
+        )
         return {
             'type': 'tool_result',
             'tool_use_id': tool_use_id,
@@ -352,7 +431,10 @@ def run_text_editor_tool(
     if command == 'insert':
         insert_line = input_params.get('insert_line', 0)
         insert_text = input_params.get('insert_text', '')
-        content, is_error = execute_insert(path, insert_line, insert_text, allowed_roots)
+        content, is_error = execute_insert(
+            path, insert_line, insert_text, allowed_roots,
+            context_files=context_files, window=window
+        )
         return {
             'type': 'tool_result',
             'tool_use_id': tool_use_id,
