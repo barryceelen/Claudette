@@ -59,13 +59,22 @@
 	// Web search is billed at $10 per 1,000 searches in addition to token costs.
 	// https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool
 	"web_search": false,
+	// When true, Claude can view and edit files (view, str_replace, create, insert)
+	// in your project. Uses non-streaming requests until the turn ends.
+	// Paths are resolved against project folders or text_editor_tool_roots.
+	// https://platform.claude.com/docs/en/agents-and-tools/tool-use/text-editor-tool
+	"text_editor_tool": false,
+	// Optional: max characters when viewing a file (Claude 4 tool only). 0 = no limit.
+	// "text_editor_tool_max_characters": 10000,
+	// Optional: extra allowed roots for file operations (paths must be under these or project folders).
+	"text_editor_tool_roots": [],
 	// Maximum number of web searches per request when web_search is enabled (1–20).
 	"web_search_max_uses": 5,
 	// Optional: only include results from these domains (e.g. ["example.com", "docs.example.com"]).
 	// Do not set both web_search_allowed_domains and web_search_blocked_domains.
-	// "web_search_allowed_domains": [],
+	"web_search_allowed_domains": [],
 	// Optional: exclude results from these domains.
-	// "web_search_blocked_domains": [],
+	"web_search_blocked_domains": [],
 	// Optional: localize search results. IANA timezone: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
 	// "web_search_user_location": {
 	//     "type": "approximate",

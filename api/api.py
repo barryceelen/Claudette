@@ -1,3 +1,5 @@
+# Made by Barry
+
 import sublime
 import json
 import urllib.request
@@ -8,6 +10,7 @@ from typing import Any
 from ..statusbar.spinner import ClaudetteSpinner
 from ..constants import ANTHROPIC_VERSION, DEFAULT_MODEL, DEFAULT_BASE_URL, MAX_TOKENS, SETTINGS_FILE, DEFAULT_VERIFY_SSL
 from ..utils import claudette_get_api_key_value, claudette_chat_status_message
+from ..tools.text_editor import run_text_editor_tool
 
 class ClaudetteClaudeAPI:
     def __init__(self):
@@ -80,6 +83,350 @@ class ClaudetteClaudeAPI:
 
         return input_cost + output_cost + cache_write_cost + cache_read_cost
 
+    @staticmethod
+    def _message_has_content(msg):
+        """Return True if message has content to send (string or list for tool turns)."""
+        content = msg.get('content')
+        if isinstance(content, str):
+            return bool(content.strip())
+        if isinstance(content, list):
+            return len(content) > 0
+        return False
+
+    def _get_text_editor_tool_def(self):
+        """Return text editor tool definition for current model, or None if disabled."""
+        if not self.settings.get('text_editor_tool', False):
+            return None
+        model_lower = (self.model or '').lower()
+        if 'claude-3-7' in model_lower:
+            tool_def = {
+                'type': 'text_editor_20250124',
+                'name': 'str_replace_editor',
+            }
+        else:
+            tool_def = {
+                'type': 'text_editor_20250728',
+                'name': 'str_replace_based_edit_tool',
+            }
+            try:
+                max_chars = int(self.settings.get('text_editor_tool_max_characters', 0))
+                if max_chars > 0:
+                    tool_def['max_characters'] = max_chars
+            except (TypeError, ValueError):
+                pass
+        return tool_def
+
+    def _build_system_messages(self, chat_view=None):
+        """Build system messages list (with optional context files)."""
+        system_messages = [
+            {
+                "type": "text",
+                "text": '''Format responses in markdown. Do not add a summary before your answer. Wrap code in fenced code blocks.
+
+If the reponse warrants being structured in sections, use this heading structure (h1 is reserved for the chat interface):
+
+Content here.
+
+## Subtopic
+
+More content.
+
+```python
+# code example
+```''',
+            }
+        ]
+
+        settings_system_messages = self.settings.get('system_messages', [])
+        default_index = self.settings.get('default_system_message_index', 0)
+
+        if (settings_system_messages and
+                isinstance(settings_system_messages, list) and
+                isinstance(default_index, int) and
+                0 <= default_index < len(settings_system_messages)):
+
+            selected_message = settings_system_messages[default_index]
+            if selected_message and selected_message.strip():
+                system_messages.append({
+                    "type": "text",
+                    "text": selected_message.strip()
+                })
+
+        if chat_view:
+            context_files = chat_view.settings().get('claudette_context_files', {})
+            if context_files:
+                combined_content = "<reference_files>\n"
+                for file_path, file_info in context_files.items():
+                    if file_info.get('content'):
+                        combined_content += f"<file>\n"
+                        combined_content += f"<path>{file_path}</path>\n"
+                        combined_content += f"<content>\n{file_info['content']}\n</content>\n"
+                        combined_content += "</file>\n"
+                combined_content += "</reference_files>"
+
+                if combined_content != "<reference_files>\n</reference_files>":
+                    system_message = {
+                        "type": "text",
+                        "text": combined_content
+                    }
+                    system_message['cache_control'] = {"type": "ephemeral"}
+                    system_messages.append(system_message)
+
+        return system_messages
+
+    def _request_non_streaming(self, messages, system_messages, tools_list=None):
+        """
+        Send a single non-streaming request. Returns (response_message_dict, usage_dict).
+        response_message_dict has 'content' (list of blocks) and 'stop_reason'.
+        """
+        headers = {
+            'x-api-key': self.api_key,
+            'anthropic-version': ANTHROPIC_VERSION,
+            'content-type': 'application/json',
+        }
+
+        data = {
+            'messages': messages,
+            'max_tokens': self.max_tokens,
+            'model': self.model,
+            'stream': False,
+            'system': system_messages,
+            'temperature': self.get_valid_temperature(self.temperature)
+        }
+        if tools_list:
+            data['tools'] = tools_list
+
+        req = urllib.request.Request(
+            urllib.parse.urljoin(self.base_url, 'messages'),
+            data=json.dumps(data).encode('utf-8'),
+            headers=headers,
+            method='POST'
+        )
+
+        ssl_context = self._get_ssl_context()
+        with urllib.request.urlopen(req, context=ssl_context) as response:
+            body = json.loads(response.read().decode('utf-8'))
+
+        # Response may have message nested under 'message' or be the message at top level.
+        msg = body.get('message') if body.get('message') is not None else body
+        if not isinstance(msg, dict):
+            msg = {}
+        usage = body.get('usage') or msg.get('usage') or {}
+        return msg, usage
+
+    def run_with_text_editor_loop(self, chunk_callback, messages, chat_view, on_complete_cb=None):
+        """
+        Run request loop with text editor tool: non-streaming requests until end_turn.
+        Calls chunk_callback with final text and on_complete_cb when done.
+        """
+        def handle_error(error_msg):
+            sublime.set_timeout(
+                lambda: chunk_callback(error_msg, is_done=True),
+                0
+            )
+
+        filtered = [m for m in messages if self._message_has_content(m)]
+        if not filtered:
+            return
+
+        if not self.api_key:
+            handle_error("[Error] The API key is not set. Please check your API key configuration.")
+            return
+
+        text_editor_tool = self._get_text_editor_tool_def()
+        if not text_editor_tool:
+            handle_error("[Error] Text editor tool is not enabled.")
+            return
+
+        tools_list = [text_editor_tool]
+        if self.settings.get('web_search', False):
+            try:
+                max_uses = int(self.settings.get('web_search_max_uses', 5))
+                max_uses = max(1, min(20, max_uses))
+            except (TypeError, ValueError):
+                max_uses = 5
+            tool_def = {
+                'type': 'web_search_20250305',
+                'name': 'web_search',
+                'max_uses': max_uses
+            }
+            allowed = self.settings.get('web_search_allowed_domains')
+            blocked = self.settings.get('web_search_blocked_domains')
+            if allowed and isinstance(allowed, list) and len(allowed) > 0:
+                tool_def['allowed_domains'] = [str(d).strip() for d in allowed if str(d).strip()]
+            elif blocked and isinstance(blocked, list) and len(blocked) > 0:
+                tool_def['blocked_domains'] = [str(d).strip() for d in blocked if str(d).strip()]
+            user_loc = self.settings.get('web_search_user_location')
+            if (user_loc and isinstance(user_loc, dict) and user_loc.get('type') == 'approximate' and
+                    (user_loc.get('city') or user_loc.get('country') or user_loc.get('timezone'))):
+                tool_def['user_location'] = {
+                    'type': 'approximate',
+                    'city': str(user_loc.get('city', '')),
+                    'region': str(user_loc.get('region', '')),
+                    'country': str(user_loc.get('country', '')),
+                    'timezone': str(user_loc.get('timezone', ''))
+                }
+            tools_list.append(tool_def)
+
+        # chat_view may be the sublime View or a ClaudetteChatView (has .view, .set_tool_status, .clear_tool_status).
+        view_for_api = getattr(chat_view, 'view', chat_view)
+        chat_view_for_status = chat_view if hasattr(chat_view, 'set_tool_status') else None
+
+        system_messages = self._build_system_messages(view_for_api)
+        window = view_for_api.window() if view_for_api else None
+        settings = self.settings
+        try:
+            max_chars = int(self.settings.get('text_editor_tool_max_characters', 0))
+        except (TypeError, ValueError):
+            max_chars = None
+
+        try:
+            self.spinner.start('Fetching response')
+            current_messages = list(filtered)
+
+            while True:
+                try:
+                    msg, usage = self._request_non_streaming(current_messages, system_messages, tools_list)
+                except urllib.error.HTTPError as e:
+                    self.spinner.stop()
+                    if chat_view_for_status:
+                        sublime.set_timeout(lambda: chat_view_for_status.clear_tool_status(), 0)
+                    error_content = e.read().decode('utf-8')
+                    try:
+                        err_data = json.loads(error_content)
+                        error_message = err_data.get('error', {}).get('message', str(e))
+                    except (json.JSONDecodeError, AttributeError, KeyError):
+                        error_message = str(e)
+                    handle_error("[Error] {0}".format(error_message))
+                    return
+                except urllib.error.URLError as e:
+                    self.spinner.stop()
+                    if chat_view_for_status:
+                        sublime.set_timeout(lambda: chat_view_for_status.clear_tool_status(), 0)
+                    handle_error("[Error] {0}".format(str(e)))
+                    return
+
+                stop_reason = (msg.get('stop_reason') or '').strip() or None
+                content = msg.get('content') or []
+
+                # If API omits stop_reason, treat as end_turn when we have text content.
+                if not stop_reason and content:
+                    has_text = any(
+                        isinstance(b, dict) and b.get('type') == 'text'
+                        for b in content
+                    )
+                    if has_text:
+                        stop_reason = 'end_turn'
+
+                if stop_reason == 'tool_use':
+                    def update_status(label):
+                        self.spinner.set_message(label)
+                        if chat_view_for_status:
+                            chat_view_for_status.set_tool_status(label)
+                    sublime.set_timeout(
+                        lambda: update_status('Reading/editing files…'),
+                        0
+                    )
+                    tool_results = []
+                    assistant_content = []
+                    for block in content:
+                        if not isinstance(block, dict):
+                            continue
+                        if block.get('type') == 'text' and block.get('text'):
+                            assistant_content.append(block)
+                        elif block.get('type') == 'tool_use':
+                            assistant_content.append(block)
+                            inp = block.get('input', {})
+                            path = inp.get('path', '') or 'file'
+                            cmd = inp.get('command', 'view')
+                            action = {
+                                'view': 'Reading',
+                                'str_replace': 'Editing',
+                                'create': 'Creating',
+                                'insert': 'Editing',
+                            }.get(cmd, 'Processing')
+                            status_label = '{0} {1}'.format(action, path)
+                            sublime.set_timeout(
+                                lambda s=status_label: update_status(s),
+                                0
+                            )
+                            result = run_text_editor_tool(
+                                block.get('id', ''),
+                                block.get('name', ''),
+                                inp,
+                                window,
+                                settings,
+                                max_characters=max_chars,
+                            )
+                            tool_results.append(result)
+
+                    user_content = tool_results
+                    current_messages.append({'role': 'assistant', 'content': assistant_content})
+                    current_messages.append({'role': 'user', 'content': user_content})
+                    continue
+
+                if stop_reason == 'end_turn':
+                    self.spinner.stop()
+                    if chat_view_for_status:
+                        sublime.set_timeout(lambda: chat_view_for_status.clear_tool_status(), 0)
+                    text_parts = []
+                    for block in content:
+                        if isinstance(block, dict) and block.get('type') == 'text' and block.get('text'):
+                            text_parts.append(block['text'])
+                    final_text = ''.join(text_parts)
+                    if final_text:
+                        sublime.set_timeout(
+                            lambda t=final_text: chunk_callback(t, is_done=False),
+                            0
+                        )
+                    input_tokens = usage.get('input_tokens', 0)
+                    output_tokens = usage.get('output_tokens', 0)
+                    if view_for_api and hasattr(view_for_api, 'settings'):
+                        sess = view_for_api.settings().get('claudette_session_stats', {
+                            'input_tokens': 0, 'output_tokens': 0, 'cost': 0.0, 'web_search_requests': 0
+                        })
+                        if 'web_search_requests' not in sess:
+                            sess['web_search_requests'] = 0
+                        sess['input_tokens'] = sess.get('input_tokens', 0) + input_tokens
+                        sess['output_tokens'] = sess.get('output_tokens', 0) + output_tokens
+                        sess['cost'] = sess.get('cost', 0.0) + self.calculate_cost(input_tokens, output_tokens)
+                        view_for_api.settings().set('claudette_session_stats', sess)
+                        cache_info = ""
+                        if usage.get('cache_read_input_tokens'):
+                            cache_info = " (cache read: {0:,})".format(usage.get('cache_read_input_tokens', 0))
+                        elif usage.get('cache_write_input_tokens'):
+                            cache_info = " (cache write: {0:,})".format(usage.get('cache_write_input_tokens', 0))
+                        status_message = "Tokens: {0:,} sent, {1:,} received{2}.".format(
+                            input_tokens, output_tokens, cache_info
+                        )
+                        if sess.get('cost', 0) > 0:
+                            status_message += " Cost: ${0:.4f} message, ${1:.4f} session.".format(
+                                self.calculate_cost(input_tokens, output_tokens), sess['cost']
+                            )
+                        sublime.set_timeout(lambda s=status_message: sublime.status_message(s), 100)
+                    sublime.set_timeout(
+                        lambda: chunk_callback("", is_done=True),
+                        0
+                    )
+                    return
+
+                self.spinner.stop()
+                if chat_view_for_status:
+                    sublime.set_timeout(lambda: chat_view_for_status.clear_tool_status(), 0)
+                handle_error(
+                    "[Error] Unexpected stop_reason: {0}. "
+                    "The API response may have a different structure.".format(
+                        repr(stop_reason) if stop_reason else "(empty)"
+                    )
+                )
+                return
+
+        except Exception as e:
+            self.spinner.stop()
+            if chat_view_for_status:
+                sublime.set_timeout(lambda: chat_view_for_status.clear_tool_status(), 0)
+            handle_error("[Error] {0}".format(str(e)))
+
     def stream_response(self, chunk_callback, messages, chat_view=None):
         input_tokens = 0
         output_tokens = 0
@@ -110,63 +457,10 @@ class ClaudetteClaudeAPI:
 
             filtered_messages = [
                 msg for msg in messages
-                if msg.get('content', '').strip()
+                if self._message_has_content(msg)
             ]
 
-            system_messages = [
-                {
-                    "type": "text",
-                    "text": '''Format responses in markdown. Do not add a summary before your answer. Wrap code in fenced code blocks.
-
-If the reponse warrants being structured in sections, use this heading structure (h1 is reserved for the chat interface):
-
-Content here.
-
-## Subtopic
-
-More content.
-
-```python
-# code example
-```''',
-                }
-            ]
-
-            settings_system_messages = self.settings.get('system_messages', [])
-            default_index = self.settings.get('default_system_message_index', 0)
-
-            if (settings_system_messages and
-                isinstance(settings_system_messages, list) and
-                isinstance(default_index, int) and
-                0 <= default_index < len(settings_system_messages)):
-
-                selected_message = settings_system_messages[default_index]
-                if selected_message and selected_message.strip():
-                    system_messages.append({
-                        "type": "text",
-                        "text": selected_message.strip()
-                    })
-
-            if chat_view:
-                context_files = chat_view.settings().get('claudette_context_files', {})
-                if context_files:
-                    combined_content = "<reference_files>\n"
-                    for file_path, file_info in context_files.items():
-                        if file_info.get('content'):
-                            combined_content += f"<file>\n"
-                            combined_content += f"<path>{file_path}</path>\n"
-                            combined_content += f"<content>\n{file_info['content']}\n</content>\n"
-                            combined_content += "</file>\n"
-                    combined_content += "</reference_files>"
-
-                    if combined_content != "<reference_files>\n</reference_files>":
-                        system_message: dict[str, Any] = {
-                            "type": "text",
-                            "text": combined_content
-                        }
-
-                        system_message['cache_control'] = {"type": "ephemeral"}
-                        system_messages.append(system_message)
+            system_messages = self._build_system_messages(chat_view)
 
             data = {
                 'messages': filtered_messages,

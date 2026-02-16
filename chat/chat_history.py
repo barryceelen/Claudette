@@ -45,7 +45,11 @@ def claudette_get_current_directory(window):
     return last_dir
 
 def claudette_validate_and_sanitize_message(message):
-    """Validate a single message object and remove disallowed items"""
+    """Validate a single message object and remove disallowed items.
+
+    content may be a string (normal message) or a list of content blocks
+    (e.g. for assistant tool_use or user tool_result).
+    """
     if not isinstance(message, dict):
         return False
 
@@ -55,12 +59,15 @@ def claudette_validate_and_sanitize_message(message):
     if message['role'] not in {'user', 'assistant'}:
         return False
 
-    if not isinstance(message['content'], str):
+    content = message['content']
+    if not isinstance(content, (str, list)):
+        return False
+    if isinstance(content, list) and len(content) == 0:
         return False
 
     cleaned_message = {
         'role': message['role'],
-        'content': message['content']
+        'content': content
     }
 
     message.clear()

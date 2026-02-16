@@ -200,6 +200,9 @@ class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
             message_start = self.chat_view.view.size()
 
             def on_complete():
+                # Clear in-chat tool status line so it is not included in saved response
+                if use_text_editor:
+                    self.chat_view.clear_tool_status()
                 # Add the response to conversation history after streaming is complete
                 response_end = self.chat_view.view.size()
                 response_region = sublime.Region(message_start, response_end)
@@ -212,11 +215,15 @@ class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
                 on_complete=on_complete
             )
 
-            thread = threading.Thread(
-                target=api.stream_response,
-                args=(handler.append_chunk, conversation, self.chat_view.view)
-            )
+            use_text_editor = api.settings.get('text_editor_tool', False)
+            if use_text_editor:
+                target = api.run_with_text_editor_loop
+                args = (handler.append_chunk, conversation, self.chat_view, on_complete)
+            else:
+                target = api.stream_response
+                args = (handler.append_chunk, conversation, self.chat_view.view)
 
+            thread = threading.Thread(target=target, args=args)
             thread.start()
 
         except Exception as e:

@@ -4,7 +4,7 @@ import sublime_plugin
 import re
 from typing import List, Set
 from dataclasses import dataclass
-from ..constants import PLUGIN_NAME
+from ..constants import PLUGIN_NAME, SPINNER_CHARS, SPINNER_INTERVAL_MS
 
 @dataclass
 class ClaudetteCodeBlock:
@@ -61,6 +61,10 @@ class ClaudetteChatView:
         self.view = None
         self.phantom_sets = {}  # Store phantom sets per view
         self.existing_button_positions = {}  # Store positions per view
+        self._tool_status_phantom_sets = {}
+        self._tool_status_active = {}
+        self._tool_status_spinner_index = {}
+        self._tool_status_message = {}
 
     def create_or_get_view(self):
         """Create a new chat view or return an existing one."""
@@ -116,6 +120,80 @@ class ClaudetteChatView:
             self.phantom_sets[view_id] = sublime.PhantomSet(view, f"code_block_buttons_{view_id}")
         return self.phantom_sets[view_id]
 
+    def _get_tool_status_phantom_set(self, view):
+        """Get or create the phantom set used for the tool status line."""
+        view_id = view.id()
+        if view_id not in self._tool_status_phantom_sets:
+            self._tool_status_phantom_sets[view_id] = sublime.PhantomSet(
+                view, "claudette_tool_status_{0}".format(view_id)
+            )
+        return self._tool_status_phantom_sets[view_id]
+
+    def _tool_status_phantom_html(self, message, spinner_char):
+        """Build HTML for the status line: message + spinner at end."""
+        escaped_msg = self.escape_html(message)
+        escaped_char = self.escape_html(spinner_char)
+        return (
+            'ℹ️ {0} {1}'
+        ).format(escaped_msg, escaped_char)
+
+    def set_tool_status(self, message):
+        """
+        Show or update the tool status line as a phantom (message + spinner at end).
+        Call with message=None to clear. Spinner animates on a timer.
+        """
+        if not self.view:
+            return
+        view_id = self.view.id()
+        if message is None:
+            self._tool_status_active[view_id] = False
+            phantom_set = self._get_tool_status_phantom_set(self.view)
+            phantom_set.update([])
+            return
+        self._tool_status_active[view_id] = True
+        self._tool_status_message[view_id] = message
+        if view_id not in self._tool_status_spinner_index:
+            self._tool_status_spinner_index[view_id] = 0
+        idx = self._tool_status_spinner_index[view_id]
+        char = SPINNER_CHARS[idx % len(SPINNER_CHARS)]
+        phantom_set = self._get_tool_status_phantom_set(self.view)
+        region = sublime.Region(self.view.size(), self.view.size())
+        html = self._tool_status_phantom_html(message, char)
+        phantom = sublime.Phantom(region, html, sublime.LAYOUT_INLINE, None)
+        already_running = len(phantom_set.phantoms) > 0
+        phantom_set.update([phantom])
+        if not already_running:
+            sublime.set_timeout(
+                lambda: self._schedule_tool_status_spinner(),
+                SPINNER_INTERVAL_MS
+            )
+
+    def _schedule_tool_status_spinner(self):
+        """Update the status phantom with next spinner frame; schedule next tick."""
+        if not self.view:
+            return
+        view_id = self.view.id()
+        if not self._tool_status_active.get(view_id, False):
+            return
+        idx = self._tool_status_spinner_index.get(view_id, 0)
+        idx = (idx + 1) % len(SPINNER_CHARS)
+        self._tool_status_spinner_index[view_id] = idx
+        char = SPINNER_CHARS[idx]
+        message = self._tool_status_message.get(view_id, "")
+        phantom_set = self._get_tool_status_phantom_set(self.view)
+        region = sublime.Region(self.view.size(), self.view.size())
+        html = self._tool_status_phantom_html(message, char)
+        phantom = sublime.Phantom(region, html, sublime.LAYOUT_INLINE, None)
+        phantom_set.update([phantom])
+        sublime.set_timeout(
+            lambda: self._schedule_tool_status_spinner(),
+            SPINNER_INTERVAL_MS
+        )
+
+    def clear_tool_status(self):
+        """Clear the tool status line from the chat."""
+        self.set_tool_status(None)
+
     def get_button_positions(self, view):
         """Get or create a set of button positions for the specific view."""
         view_id = view.id()
@@ -135,8 +213,12 @@ class ClaudetteChatView:
             print(f"{PLUGIN_NAME} Error: Could not decode conversation history")
             return []
 
-    def add_to_conversation(self, role: str, content: str):
-        """Add a new message to the conversation history."""
+    def add_to_conversation(self, role: str, content):
+        """Add a new message to the conversation history.
+
+        content may be a string (normal message) or a list of content blocks
+        (e.g. for assistant tool_use or user tool_result).
+        """
         if not self.view:
             return
 

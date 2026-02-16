@@ -14,6 +14,7 @@ Type "Ask Question" in the command palette or find the *Claudette > Ask Question
 - Choose between different Claude [models](https://docs.anthropic.com/en/docs/about-claude/models)
 - Configure custom [system prompts](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/system-prompts) to customize Claude's behavior
 - Optional [web search tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool) so Claude can use up-to-date web results (requires a supported model)
+- Optional [text editor tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/text-editor-tool) allows Claude to view and edit files in your project
 - Chat History: Export and import conversations as JSON files
 
 ## Commands

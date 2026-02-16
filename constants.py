@@ -5,3 +5,5 @@ MAX_TOKENS = 8192
 PLUGIN_NAME = "Claudette"
 SETTINGS_FILE = "Claudette.sublime-settings"
 DEFAULT_VERIFY_SSL = True
+SPINNER_CHARS = ['·', '✢', '✳', '∗', '✻', '✽']
+SPINNER_INTERVAL_MS = 250
