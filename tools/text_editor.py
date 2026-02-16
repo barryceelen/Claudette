@@ -28,7 +28,7 @@ def get_allowed_roots(window, settings) -> List[str]:
         for path in extra:
             if path and isinstance(path, str):
                 p = os.path.normpath(path.strip())
-                if os.path.isdir(p) and p not in roots:
+                if p is not None and os.path.isdir(p) and p not in roots:
                     roots.append(p)
 
     if not roots and window:
@@ -107,6 +107,9 @@ def execute_view(
     if err:
         return err, True
 
+    if resolved is None:
+        return "Error: Path resolution failed", True
+
     if os.path.isdir(resolved):
         try:
             names = sorted(os.listdir(resolved))
@@ -164,6 +167,9 @@ def execute_str_replace(
     if err:
         return err, True
 
+    if resolved is None:
+        return "Error: Path resolution failed", True
+
     if not os.path.isfile(resolved):
         return "Error: File not found", True
 
@@ -205,6 +211,9 @@ def execute_create(path: str, file_text: str, allowed_roots: List[str]) -> Tuple
     if err:
         return err, True
 
+    if resolved is None:
+        return "Error: Path resolution failed", True
+
     if os.path.exists(resolved):
         return "Error: File already exists.", True
 
@@ -241,6 +250,9 @@ def execute_insert(
     resolved, err = resolve_path(path, allowed_roots)
     if err:
         return err, True
+
+    if resolved is None:
+        return "Error: Path resolution failed", True
 
     if not os.path.isfile(resolved):
         return "Error: File not found", True
