@@ -32,15 +32,15 @@
 		"command": "claudette_select_api_key_panel"
 	},
 	{
-		"caption": "Claudette: Add Current File To Context",
+		"caption": "Claudette: Add Current File to Chat",
 		"command": "claudette_context_add_current_file"
 	},
 	{
-		"caption": "Claudette: Remove Current File From Context",
+		"caption": "Claudette: Remove Current File from Chat",
 		"command": "claudette_context_remove_current_file"
 	},
 	{
-		"caption": "Claudette: Add All Open Files To Context",
+		"caption": "Claudette: Add All Open Files to Chat",
 		"command": "claudette_context_add_open_files"
 	},
 	{
