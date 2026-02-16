@@ -246,5 +246,5 @@ class ClaudetteClearChatHistoryCommand(sublime_plugin.TextCommand):
             current_chat_view.settings().erase('claudette_repomix')
             current_chat_view.settings().erase('claudette_repomix_tokens')
 
-            claudette_chat_status_message(window, "Chat history cleared", "✅")
+            claudette_chat_status_message(window, "Chat history cleared", "❎")
             sublime.status_message("Chat history cleared")
