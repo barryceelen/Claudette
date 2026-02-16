@@ -7,7 +7,7 @@ import ssl
 from typing import Any
 from ..statusbar.spinner import ClaudetteSpinner
 from ..constants import ANTHROPIC_VERSION, DEFAULT_MODEL, DEFAULT_BASE_URL, MAX_TOKENS, SETTINGS_FILE, DEFAULT_VERIFY_SSL
-from ..utils import claudette_get_api_key_value
+from ..utils import claudette_get_api_key_value, claudette_chat_status_message
 
 class ClaudetteClaudeAPI:
     def __init__(self):
@@ -83,6 +83,7 @@ class ClaudetteClaudeAPI:
     def stream_response(self, chunk_callback, messages, chat_view=None):
         input_tokens = 0
         output_tokens = 0
+        web_search_requests = 0
         cache_info = ""
 
         def handle_error(error_msg):
@@ -176,6 +177,35 @@ More content.
                 'temperature': self.get_valid_temperature(self.temperature)
             }
 
+            if self.settings.get('web_search', False):
+                try:
+                    max_uses = int(self.settings.get('web_search_max_uses', 5))
+                    max_uses = max(1, min(20, max_uses))
+                except (TypeError, ValueError):
+                    max_uses = 5
+                tool_def = {
+                    'type': 'web_search_20250305',
+                    'name': 'web_search',
+                    'max_uses': max_uses
+                }
+                allowed = self.settings.get('web_search_allowed_domains')
+                blocked = self.settings.get('web_search_blocked_domains')
+                if allowed and isinstance(allowed, list) and len(allowed) > 0:
+                    tool_def['allowed_domains'] = [str(d).strip() for d in allowed if str(d).strip()]
+                elif blocked and isinstance(blocked, list) and len(blocked) > 0:
+                    tool_def['blocked_domains'] = [str(d).strip() for d in blocked if str(d).strip()]
+                user_loc = self.settings.get('web_search_user_location')
+                if (user_loc and isinstance(user_loc, dict) and user_loc.get('type') == 'approximate' and
+                        (user_loc.get('city') or user_loc.get('country') or user_loc.get('timezone'))):
+                    tool_def['user_location'] = {
+                        'type': 'approximate',
+                        'city': str(user_loc.get('city', '')),
+                        'region': str(user_loc.get('region', '')),
+                        'country': str(user_loc.get('country', '')),
+                        'timezone': str(user_loc.get('timezone', ''))
+                    }
+                data['tools'] = [tool_def]
+
             req = urllib.request.Request(
                 urllib.parse.urljoin(self.base_url, 'messages'),
                 data=json.dumps(data).encode('utf-8'),
@@ -213,12 +243,75 @@ More content.
                                     elif cache_write_tokens > 0:
                                         cache_info = f" (cache write: {cache_write_tokens:,})"
 
-                            # Handle content updates
-                            if 'delta' in data and 'text' in data['delta']:
-                                sublime.set_timeout(
-                                    lambda text=data['delta']['text']: chunk_callback(text, is_done=False),
-                                    0
-                                )
+                            # Web search stream status
+                            if data.get('type') == 'content_block_start':
+                                content_block = data.get('content_block', {})
+                                block_type = content_block.get('type')
+                                if block_type == 'server_tool_use' and content_block.get('name') == 'web_search':
+                                    sublime.set_timeout(
+                                        lambda: sublime.status_message('Searching the web...'),
+                                        0
+                                    )
+                                elif block_type == 'web_search_tool_result':
+                                    has_error = False
+                                    sources_lines = []
+
+                                    for item in content_block.get('content', []):
+                                        if not isinstance(item, dict):
+                                            continue
+                                        if item.get('type') == 'web_search_tool_result_error':
+                                            has_error = True
+                                            error_code = item.get('error_code', 'unavailable')
+                                            err_msg = "Web search error: {0}".format(error_code)
+                                            view_ref = chat_view
+
+                                            def show_web_search_error(msg=err_msg, v=view_ref):
+                                                if v and v.window():
+                                                    claudette_chat_status_message(v.window(), msg, "⚠️")
+                                                sublime.status_message(msg)
+
+                                            sublime.set_timeout(show_web_search_error, 0)
+                                            break
+                                        if item.get('type') == 'web_search_result':
+                                            url = item.get('url', '')
+                                            title = item.get('title', url)
+                                            if url:
+                                                sources_lines.append("- [{0}]({1})".format(title, url))
+
+                                    if not has_error and sources_lines:
+                                        sources_text = "\n\n" + "\n".join(sources_lines) + "\n\n"
+                                        sublime.set_timeout(
+                                            lambda cb=chunk_callback, text=sources_text: cb(text, is_done=False),
+                                            0
+                                        )
+
+                                    if not has_error:
+                                        sublime.set_timeout(
+                                            lambda: sublime.status_message(''),
+                                            0
+                                        )
+
+                            # Handle content updates (text and optional citations)
+                            if 'delta' in data:
+                                delta = data['delta']
+                                text = delta.get('text')
+                                if text and (delta.get('type') == 'text_delta' or 'type' not in delta):
+                                    sublime.set_timeout(
+                                        lambda t=text: chunk_callback(t, is_done=False),
+                                        0
+                                    )
+                                # Render citations as links when the API sends them (e.g. web search).
+                                citations = delta.get('citations') if isinstance(delta.get('citations'), list) else []
+                                for cit in citations:
+                                    if isinstance(cit, dict):
+                                        url = cit.get('url') or ''
+                                        title = cit.get('title') or url or 'Source'
+                                        if url:
+                                            link_md = " [{0}]({1}) ".format(title, url)
+                                            sublime.set_timeout(
+                                                lambda cb=chunk_callback, md=link_md: cb(md, is_done=False),
+                                                0
+                                            )
 
                             # Get final output tokens from message_delta
                             if data.get('type') == 'message_delta' and 'usage' in data:
@@ -227,16 +320,21 @@ More content.
                             # Send token information at the end
                             if data.get('type') == 'message_stop':
                                 # Get cache token information
-                                cache_read_tokens = data.get('usage', {}).get('cache_read_input_tokens', 0)
-                                cache_write_tokens = data.get('usage', {}).get('cache_write_input_tokens', 0)
+                                usage = data.get('usage', {})
+                                cache_read_tokens = usage.get('cache_read_input_tokens', 0)
+                                cache_write_tokens = usage.get('cache_write_input_tokens', 0)
+                                server_tool_use = usage.get('server_tool_use', {})
+                                web_search_requests = server_tool_use.get('web_search_requests', 0)
 
-                                # Calculate current response cost including cache operations
+                                # Calculate current response cost including cache and web search
                                 current_cost = self.calculate_cost(
                                     input_tokens,
                                     output_tokens,
                                     cache_read_tokens=cache_read_tokens,
                                     cache_write_tokens=cache_write_tokens
                                 )
+                                web_search_cost = web_search_requests * (10.0 / 1000)
+                                current_cost += web_search_cost
 
                                 # Format current cost
                                 current_cost_str = f"${current_cost:.4f}"
@@ -249,12 +347,16 @@ More content.
                                     session_stats = settings.get('claudette_session_stats', {
                                         'input_tokens': 0,
                                         'output_tokens': 0,
-                                        'cost': 0.0
+                                        'cost': 0.0,
+                                        'web_search_requests': 0
                                     })
+                                    if 'web_search_requests' not in session_stats:
+                                        session_stats['web_search_requests'] = 0
 
                                     # Update session totals
                                     session_stats['input_tokens'] += input_tokens
                                     session_stats['output_tokens'] += output_tokens
+                                    session_stats['web_search_requests'] += web_search_requests
                                     session_stats['cost'] += current_cost
 
                                     # Save updated stats back to settings

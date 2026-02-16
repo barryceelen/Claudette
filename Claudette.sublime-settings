@@ -54,6 +54,26 @@
 	// Index of the currently active system message in the system_messages setting.
 	"default_system_message_index": 0,
 	"temperature": "1.0",
+	// When true, Claude can search the web for up-to-date information. Only works
+	// with supported models (e.g. Claude Opus 4.6, 4.5, Sonnet 4.5, Haiku 4.5).
+	// Web search is billed at $10 per 1,000 searches in addition to token costs.
+	// https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool
+	"web_search": false,
+	// Maximum number of web searches per request when web_search is enabled (1–20).
+	"web_search_max_uses": 5,
+	// Optional: only include results from these domains (e.g. ["example.com", "docs.example.com"]).
+	// Do not set both web_search_allowed_domains and web_search_blocked_domains.
+	// "web_search_allowed_domains": [],
+	// Optional: exclude results from these domains.
+	// "web_search_blocked_domains": [],
+	// Optional: localize search results. IANA timezone: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+	// "web_search_user_location": {
+	//     "type": "approximate",
+	//     "city": "San Francisco",
+	//     "region": "California",
+	//     "country": "US",
+	//     "timezone": "America/Los_Angeles"
+	// },
 	// Claude pricing per 1K tokens (as of December 2025)
 	"pricing": {
 		"haiku": {

@@ -13,6 +13,7 @@ Type "Ask Question" in the command palette or find the *Claudette > Ask Question
 - Include one or more files in the chat context
 - Choose between different Claude [models](https://docs.anthropic.com/en/docs/about-claude/models)
 - Configure custom [system prompts](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/system-prompts) to customize Claude's behavior
+- Optional [web search tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool) so Claude can use up-to-date web results (requires a supported model)
 - Chat History: Export and import conversations as JSON files
 
 ## Commands
