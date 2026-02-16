@@ -6,7 +6,6 @@ and returns results for tool_result blocks.
 """
 
 import os
-import sublime
 from typing import Any, Dict, List, Optional, Tuple
 
 
