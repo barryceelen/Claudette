@@ -1,5 +1,3 @@
-# Made by Barry
-
 import sublime
 import json
 import urllib.request
