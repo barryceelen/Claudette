@@ -1,7 +1,8 @@
 class ClaudetteStreamingResponseHandler:
-    def __init__(self, view, on_complete=None):
+    def __init__(self, view, on_complete=None, response_header_end=None):
         self.view = view
         self.on_complete = on_complete
+        self.response_header_end = response_header_end
         self.line_buffer = ""
         self.at_line_start = True
 
@@ -16,7 +17,25 @@ class ClaudetteStreamingResponseHandler:
             })
             self.view.set_read_only(True)
 
-    def append_chunk(self, chunk, is_done=False):
+    def _insert_at_response_header(self, text):
+        """Insert text immediately after # Claude's Response (before streamed content)."""
+        if self.response_header_end is None or not text:
+            return
+        pos = self.response_header_end
+        self.view.set_read_only(False)
+        try:
+            self.view.sel().clear()
+            self.view.sel().add(sublime.Region(pos, pos))
+            self.view.run_command('insert', {'characters': text})
+            self.view.sel().clear()
+            self.view.sel().add(sublime.Region(self.view.size(), self.view.size()))
+        finally:
+            self.view.set_read_only(True)
+
+    def append_chunk(self, chunk, is_done=False, insert_after_response_header=False):
+        if insert_after_response_header and self.response_header_end is not None:
+            self._insert_at_response_header(chunk)
+            return
         # Process chunk character by character to convert h1 headings to h2,
         # keeping h1 reserved for user questions in the symbol list.
         for char in chunk:

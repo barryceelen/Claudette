@@ -212,7 +212,8 @@ class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
 
             handler = ClaudetteStreamingResponseHandler(
                 view=self.chat_view.view,
-                on_complete=on_complete
+                on_complete=on_complete,
+                response_header_end=message_start
             )
 
             use_text_editor = api.settings.get('text_editor_tool', False)

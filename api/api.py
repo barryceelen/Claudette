@@ -372,10 +372,34 @@ More content.
                     if chat_view_for_status:
                         sublime.set_timeout(lambda: chat_view_for_status.clear_tool_status(), 0)
                     text_parts = []
+                    sources_lines = []
+                    
+                    # Process all content blocks (text and web search results)
                     for block in content:
+                        if not isinstance(block, dict):
+                            continue
                         if isinstance(block, dict) and block.get('type') == 'text' and block.get('text'):
                             text_parts.append(block['text'])
+                        elif block.get('type') == 'web_search_tool_result':
+                            # Extract web search results
+                            for item in block.get('content', []):
+                                if not isinstance(item, dict):
+                                    continue
+                                if item.get('type') == 'web_search_result':
+                                    url = item.get('url', '')
+                                    title = item.get('title', url)
+                                    if url:
+                                        sources_lines.append("- [{0}]({1})".format(title, url))
+                    
+                    # Display web search results first (directly under # Claude's Response)
                     final_text = ''.join(text_parts)
+                    if sources_lines:
+                        sources_text = "### Search Results\n\n" + "\n".join(sources_lines) + "\n\n"
+                        sublime.set_timeout(
+                            lambda t=sources_text: chunk_callback(t, is_done=False),
+                            0
+                        )
+                    # Display text content
                     if final_text:
                         sublime.set_timeout(
                             lambda t=final_text: chunk_callback(t, is_done=False),
@@ -511,6 +535,26 @@ More content.
 
             try:
                 ssl_context = self._get_ssl_context()
+                stream_web_search_sources = []
+                stream_current_block_type = None
+                stream_current_block_index = None
+
+                def parse_web_search_items(items):
+                    lines = []
+                    has_error = False
+                    for item in (items or []):
+                        if not isinstance(item, dict):
+                            continue
+                        if item.get('type') == 'web_search_tool_result_error':
+                            has_error = True
+                            break
+                        if item.get('type') == 'web_search_result':
+                            url = item.get('url', '')
+                            title = item.get('title', url)
+                            if url:
+                                lines.append("- [{0}]({1})".format(title, url))
+                    return lines, has_error
+
                 with urllib.request.urlopen(req, context=ssl_context) as response:
                     for line in response:
                         if not line or line.isspace():
@@ -539,53 +583,83 @@ More content.
                                     elif cache_write_tokens > 0:
                                         cache_info = f" (cache write: {cache_write_tokens:,})"
 
-                            # Web search stream status
+                            # Web search: track block and accumulate sources from start/delta/stop
                             if data.get('type') == 'content_block_start':
                                 content_block = data.get('content_block', {})
                                 block_type = content_block.get('type')
+                                idx = data.get('index')
+                                stream_current_block_index = idx
+                                stream_current_block_type = block_type
+
                                 if block_type == 'server_tool_use' and content_block.get('name') == 'web_search':
                                     sublime.set_timeout(
                                         lambda: sublime.status_message('Searching the web...'),
                                         0
                                     )
                                 elif block_type == 'web_search_tool_result':
-                                    has_error = False
-                                    sources_lines = []
-
-                                    for item in content_block.get('content', []):
-                                        if not isinstance(item, dict):
-                                            continue
-                                        if item.get('type') == 'web_search_tool_result_error':
-                                            has_error = True
-                                            error_code = item.get('error_code', 'unavailable')
-                                            err_msg = "Web search error: {0}".format(error_code)
-                                            view_ref = chat_view
-
-                                            def show_web_search_error(msg=err_msg, v=view_ref):
-                                                if v and v.window():
-                                                    claudette_chat_status_message(v.window(), msg, "⚠️")
-                                                sublime.status_message(msg)
-
-                                            sublime.set_timeout(show_web_search_error, 0)
-                                            break
-                                        if item.get('type') == 'web_search_result':
-                                            url = item.get('url', '')
-                                            title = item.get('title', url)
-                                            if url:
-                                                sources_lines.append("- [{0}]({1})".format(title, url))
-
-                                    if not has_error and sources_lines:
-                                        sources_text = "\n\n" + "\n".join(sources_lines) + "\n\n"
-                                        sublime.set_timeout(
-                                            lambda cb=chunk_callback, text=sources_text: cb(text, is_done=False),
-                                            0
+                                    stream_web_search_sources = []
+                                    sources_lines, has_error = parse_web_search_items(
+                                        content_block.get('content', [])
+                                    )
+                                    if has_error:
+                                        err_item = next(
+                                            (it for it in (content_block.get('content') or [])
+                                            if isinstance(it, dict)
+                                            and it.get('type') == 'web_search_tool_result_error'
+                                        ),
+                                        None
                                         )
+                                        error_code = err_item.get('error_code', 'unavailable') if err_item else 'unavailable'
+                                        err_msg = "Web search error: {0}".format(error_code)
+                                        view_ref = chat_view
 
-                                    if not has_error:
-                                        sublime.set_timeout(
-                                            lambda: sublime.status_message(''),
-                                            0
-                                        )
+                                        def show_web_search_error(msg=err_msg, v=view_ref):
+                                            if v and v.window():
+                                                claudette_chat_status_message(v.window(), msg, "⚠️")
+                                            sublime.status_message(msg)
+
+                                        sublime.set_timeout(show_web_search_error, 0)
+                                    else:
+                                        stream_web_search_sources.extend(sources_lines)
+                                        sublime.set_timeout(lambda: sublime.status_message(''), 0)
+
+                            elif data.get('type') == 'content_block_delta':
+                                delta = data.get('delta', {})
+                                idx = data.get('index')
+                                if (
+                                    idx == stream_current_block_index
+                                    and stream_current_block_type == 'web_search_tool_result'
+                                ):
+                                    # Accumulate content from delta (API may send results incrementally)
+                                    items = delta.get('content')
+                                    if isinstance(items, list):
+                                        sources_lines, has_error = parse_web_search_items(items)
+                                        if not has_error:
+                                            stream_web_search_sources.extend(sources_lines)
+                                    elif isinstance(items, dict):
+                                        sources_lines, has_error = parse_web_search_items([items])
+                                        if not has_error:
+                                            stream_web_search_sources.extend(sources_lines)
+
+                            elif data.get('type') == 'content_block_stop':
+                                idx = data.get('index')
+                                if (
+                                    idx == stream_current_block_index
+                                    and stream_current_block_type == 'web_search_tool_result'
+                                    and stream_web_search_sources
+                                ):
+                                    sources_text = "### Search Results\n\n" + "\n".join(
+                                        stream_web_search_sources
+                                    ) + "\n\n"
+                                    sublime.set_timeout(
+                                        lambda cb=chunk_callback, text=sources_text: cb(
+                                            text, is_done=False, insert_after_response_header=True
+                                        ),
+                                        0
+                                    )
+                                if idx == stream_current_block_index:
+                                    stream_current_block_type = None
+                                    stream_current_block_index = None
 
                             # Handle content updates (text and optional citations)
                             if 'delta' in data:
