@@ -1,3 +1,4 @@
+import os
 import sublime
 import json
 import urllib.request
@@ -8,7 +9,7 @@ from typing import Any
 from ..statusbar.spinner import ClaudetteSpinner
 from ..constants import ANTHROPIC_VERSION, DEFAULT_MODEL, DEFAULT_BASE_URL, MAX_TOKENS, SETTINGS_FILE, DEFAULT_VERIFY_SSL
 from ..utils import claudette_get_api_key_value, claudette_chat_status_message
-from ..tools.text_editor import run_text_editor_tool
+from ..tools.text_editor import run_text_editor_tool, get_allowed_roots, resolve_path
 
 class ClaudetteClaudeAPI:
     def __init__(self):
@@ -335,7 +336,7 @@ More content.
                         elif block.get('type') == 'tool_use':
                             assistant_content.append(block)
                             inp = block.get('input', {})
-                            path = inp.get('path', '') or 'file'
+                            raw_path = inp.get('path', '') or 'file'
                             cmd = inp.get('command', 'view')
                             action = {
                                 'view': 'Reading',
@@ -343,14 +344,31 @@ More content.
                                 'create': 'Creating',
                                 'insert': 'Editing',
                             }.get(cmd, 'Processing')
-                            status_label = '{0} {1}'.format(action, path)
+                            context_files = None
+                            if view_for_api and hasattr(view_for_api, 'settings'):
+                                context_files = view_for_api.settings().get('claudette_context_files')
+                            allowed_roots = get_allowed_roots(window, settings)
+                            resolved, _ = resolve_path(
+                                raw_path, allowed_roots,
+                                context_files=context_files, window=window
+                            )
+                            if resolved and allowed_roots:
+                                try:
+                                    for root in allowed_roots:
+                                        if os.path.commonpath([root, resolved]) == root:
+                                            display_path = os.path.relpath(resolved, root)
+                                            break
+                                    else:
+                                        display_path = os.path.basename(resolved)
+                                except ValueError:
+                                    display_path = os.path.basename(resolved)
+                            else:
+                                display_path = os.path.basename(raw_path) or 'file'
+                            status_label = '{0} {1}'.format(action, display_path)
                             sublime.set_timeout(
                                 lambda s=status_label: update_status(s),
                                 0
                             )
-                            context_files = None
-                            if view_for_api and hasattr(view_for_api, 'settings'):
-                                context_files = view_for_api.settings().get('claudette_context_files')
                             result = run_text_editor_tool(
                                 block.get('id', ''),
                                 block.get('name', ''),
