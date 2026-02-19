@@ -1,7 +1,20 @@
 import sublime
 import os
+import json
+import time
+import urllib.request
+import urllib.error
 from pathlib import Path
-from .constants import SETTINGS_FILE
+from .constants import (
+    SETTINGS_FILE,
+    OAUTH_CREDENTIALS_PATH,
+    OAUTH_TOKEN_REFRESH_URL,
+    OAUTH_CLIENT_ID,
+    OAUTH_REFRESH_BUFFER_MS,
+    AUTH_MODE_API_KEY,
+    AUTH_MODE_OAUTH,
+    DEFAULT_AUTH_MODE
+)
 
 def claudette_chat_status_message(window, message: str, prefix: str = "ℹ️", copy_path: str = None) -> int:
     """
@@ -256,3 +269,175 @@ def claudette_get_api_key_name():
         return api_key.get('name', 'Default')
 
     return 'Undefined'
+
+
+# OAuth authentication functions
+
+def claudette_get_auth_mode():
+    """Get the current authentication mode from settings. Returns 'api_key' or 'oauth'."""
+    settings = sublime.load_settings(SETTINGS_FILE)
+    return settings.get('auth_mode', DEFAULT_AUTH_MODE)
+
+
+def claudette_get_oauth_credentials_path():
+    """Get the expanded path to the OAuth credentials file."""
+    return Path(os.path.expanduser(OAUTH_CREDENTIALS_PATH))
+
+
+def claudette_read_oauth_credentials():
+    """
+    Read OAuth credentials from the credentials file.
+    Returns the claudeAiOauth dict, or None if not found/invalid.
+    """
+    credentials_path = claudette_get_oauth_credentials_path()
+    try:
+        if not credentials_path.exists():
+            return None
+        with open(credentials_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        oauth_data = data.get('claudeAiOauth')
+        if not oauth_data:
+            return None
+        for field in ['accessToken', 'refreshToken', 'expiresAt']:
+            if field not in oauth_data:
+                print("Claudette: OAuth credentials missing required field: {0}".format(field))
+                return None
+        return oauth_data
+    except json.JSONDecodeError as e:
+        print("Claudette: Error parsing OAuth credentials file: {0}".format(e))
+        return None
+    except IOError as e:
+        print("Claudette: Error reading OAuth credentials file: {0}".format(e))
+        return None
+
+
+def claudette_is_oauth_token_expired(oauth_data):
+    """Return True if the OAuth token is expired or expiring within the buffer period."""
+    if not oauth_data or 'expiresAt' not in oauth_data:
+        return True
+    expires_at_ms = oauth_data['expiresAt']
+    current_time_ms = int(time.time() * 1000)
+    return current_time_ms >= (expires_at_ms - OAUTH_REFRESH_BUFFER_MS)
+
+
+def claudette_save_oauth_credentials(oauth_data):
+    """Save updated OAuth credentials back to the credentials file."""
+    credentials_path = claudette_get_oauth_credentials_path()
+    try:
+        existing_data = {}
+        if credentials_path.exists():
+            with open(credentials_path, 'r', encoding='utf-8') as f:
+                existing_data = json.load(f)
+        existing_data['claudeAiOauth'] = oauth_data
+        credentials_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(credentials_path, 'w', encoding='utf-8') as f:
+            json.dump(existing_data, f, indent=2)
+    except Exception as e:
+        print("Claudette: Error saving OAuth credentials: {0}".format(e))
+
+
+def claudette_refresh_oauth_token(oauth_data):
+    """
+    Refresh the OAuth access token using the refresh token.
+    Returns updated oauth_data dict, or None on failure.
+    """
+    if not oauth_data or 'refreshToken' not in oauth_data:
+        print("Claudette: Cannot refresh token - no refresh token available")
+        return None
+    try:
+        refresh_data = {
+            'grant_type': 'refresh_token',
+            'refresh_token': oauth_data['refreshToken'],
+            'client_id': OAUTH_CLIENT_ID
+        }
+        request_body = json.dumps(refresh_data).encode('utf-8')
+        req = urllib.request.Request(
+            OAUTH_TOKEN_REFRESH_URL,
+            data=request_body,
+            headers={'Content-Type': 'application/json', 'Accept': 'application/json'},
+            method='POST'
+        )
+        with urllib.request.urlopen(req, timeout=30) as response:
+            response_data = json.loads(response.read().decode('utf-8'))
+        new_oauth_data = oauth_data.copy()
+        new_oauth_data['accessToken'] = response_data.get('access_token', oauth_data['accessToken'])
+        if 'refresh_token' in response_data:
+            new_oauth_data['refreshToken'] = response_data['refresh_token']
+        if 'expires_in' in response_data:
+            new_oauth_data['expiresAt'] = int(time.time() * 1000) + response_data['expires_in'] * 1000
+        elif 'expires_at' in response_data:
+            new_oauth_data['expiresAt'] = response_data['expires_at']
+        claudette_save_oauth_credentials(new_oauth_data)
+        print("Claudette: OAuth token refreshed successfully")
+        return new_oauth_data
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode('utf-8') if e.fp else ''
+        print("Claudette: HTTP error refreshing OAuth token: {0} - {1}".format(e.code, error_body))
+        return None
+    except urllib.error.URLError as e:
+        print("Claudette: Network error refreshing OAuth token: {0}".format(e))
+        return None
+    except Exception as e:
+        print("Claudette: Error refreshing OAuth token: {0}".format(e))
+        return None
+
+
+def claudette_get_oauth_access_token():
+    """
+    Get a valid OAuth access token.
+    Resolution order:
+      1. CLAUDE_CODE_OAUTH_TOKEN environment variable (long-lived, cross-platform)
+      2. ~/.claude/.credentials.json (short-lived, auto-refreshed, Linux only)
+    Returns the access token string, or None if unavailable.
+    """
+    env_token = os.environ.get('CLAUDE_CODE_OAUTH_TOKEN')
+    if env_token and env_token.strip():
+        return env_token.strip()
+    oauth_data = claudette_read_oauth_credentials()
+    if not oauth_data:
+        return None
+    if claudette_is_oauth_token_expired(oauth_data):
+        print("Claudette: OAuth token expired or expiring soon, refreshing...")
+        oauth_data = claudette_refresh_oauth_token(oauth_data)
+        if not oauth_data:
+            return None
+    return oauth_data.get('accessToken')
+
+
+def claudette_get_auth_header():
+    """
+    Get the appropriate authentication header based on the current auth mode.
+    Returns (header_name, header_value), or (None, None) if unavailable.
+    """
+    auth_mode = claudette_get_auth_mode()
+    if auth_mode == AUTH_MODE_OAUTH:
+        access_token = claudette_get_oauth_access_token()
+        if access_token:
+            return ('Authorization', 'Bearer {0}'.format(access_token))
+        return (None, None)
+    else:
+        api_key = claudette_get_api_key_value()
+        if api_key:
+            return ('x-api-key', api_key)
+        return (None, None)
+
+
+def claudette_validate_oauth_setup():
+    """
+    Validate that OAuth is properly set up.
+    Returns (is_valid, error_message).
+    """
+    env_token = os.environ.get('CLAUDE_CODE_OAUTH_TOKEN')
+    if env_token and env_token.strip():
+        return (True, None)
+    credentials_path = claudette_get_oauth_credentials_path()
+    if not credentials_path.exists():
+        return (False, "OAuth token not found. Set the CLAUDE_CODE_OAUTH_TOKEN environment variable, or run 'claude login' in Claude Code CLI.")
+    oauth_data = claudette_read_oauth_credentials()
+    if not oauth_data:
+        return (False, "Invalid OAuth credentials format. Set the CLAUDE_CODE_OAUTH_TOKEN environment variable, or run 'claude login' in Claude Code CLI.")
+    if not oauth_data.get('accessToken'):
+        return (False, "No access token found in OAuth credentials.")
+    if not oauth_data.get('refreshToken'):
+        return (False, "No refresh token found in OAuth credentials. Please run 'claude login' again.")
+    return (True, None)

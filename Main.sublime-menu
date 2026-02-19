@@ -27,6 +27,10 @@
 						"command": "claudette_select_api_key_panel"
 					},
 					{
+						"caption": "Switch Authentication Mode",
+						"command": "claudette_select_auth_mode_panel"
+					},
+					{
 						"caption": "Chat History",
 						"children": [
 							{

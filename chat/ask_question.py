@@ -5,7 +5,8 @@ from ..constants import PLUGIN_NAME, SETTINGS_FILE
 from ..api.api import ClaudetteClaudeAPI
 from ..api.handler import ClaudetteStreamingResponseHandler
 from .chat_view import ClaudetteChatView
-from ..utils import claudette_chat_status_message, claudette_get_api_key_value
+from ..utils import claudette_chat_status_message, claudette_get_api_key_value, claudette_get_auth_header, claudette_get_auth_mode
+from ..constants import AUTH_MODE_OAUTH
 
 class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
     def __init__(self, view):
@@ -83,12 +84,17 @@ class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
         if not self.create_chat_panel():
             return
 
-        api_key = claudette_get_api_key_value();
+        auth_header_name, auth_header_value = claudette_get_auth_header()
 
-        if not api_key:
+        if not auth_header_value:
             window = self.get_window()
-            claudette_chat_status_message(window, "Please add your Claude API key via the `Settings > Package Settings > Claudette` menu.", "⚠️")
-            claudette_chat_status_message(window, "Claudette allows you to define a single key, or you can add multiple keys each with their own name. For example, you can define a \"Work\" and \"Personal\" key. If you have multiple API keys defined the `Claudette: Switch API Key` command allows you switch between them.", "")
+            auth_mode = claudette_get_auth_mode()
+            if auth_mode == AUTH_MODE_OAUTH:
+                claudette_chat_status_message(window, "OAuth authentication is not configured. Set the CLAUDE_CODE_OAUTH_TOKEN environment variable, or run 'claude login' in Claude Code CLI.", "⚠️")
+                claudette_chat_status_message(window, "To generate a long-lived token, run 'claude setup-token' in your terminal. Then set: export CLAUDE_CODE_OAUTH_TOKEN=<your-token>", "")
+            else:
+                claudette_chat_status_message(window, "Please add your Claude API key via the `Settings > Package Settings > Claudette` menu.", "⚠️")
+                claudette_chat_status_message(window, "Claudette allows you to define a single key, or you can add multiple keys each with their own name. For example, you can define a \"Work\" and \"Personal\" key. If you have multiple API keys defined the `Claudette: Switch API Key` command allows you switch between them.", "")
             return
 
         self.send_to_claude(code, question.strip())

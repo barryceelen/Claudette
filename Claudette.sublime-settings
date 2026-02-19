@@ -24,6 +24,13 @@
 	// https://console.anthropic.com/settings/keys
 	//
 	"api_key": "",
+	// Authentication mode: "api_key" (default) or "oauth"
+	// - "api_key": Uses the api_key setting above with x-api-key header
+	// - "oauth": Uses OAuth tokens from CLAUDE_CODE_OAUTH_TOKEN env var
+	//   or ~/.claude/.credentials.json (shared with Claude Code CLI)
+	// Pro/Max subscribers can use OAuth to avoid needing an API key.
+	// Run 'claude setup-token' to get a long-lived OAuth token.
+	"auth_mode": "api_key",
 	// API base URL. Defaults to https://api.anthropic.com/v1/
 	"base_url": "https://api.anthropic.com/v1/",
 	// SSL certificate verification. Set to false to allow self-signed certificates
