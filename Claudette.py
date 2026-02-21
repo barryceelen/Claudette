@@ -22,6 +22,7 @@ from .context.refresh_files import ClaudetteContextRefreshFilesCommand
 from .settings.select_model_panel import ClaudetteSelectModelPanelCommand
 from .settings.select_api_key_panel import ClaudetteSelectApiKeyPanelCommand
 from .settings.select_system_message_panel import ClaudetteSelectSystemMessagePanelCommand
+from .settings.select_auth_mode_panel import ClaudetteSelectAuthModePanelCommand
 
 from .statusbar.spinner import ClaudetteSpinner
 

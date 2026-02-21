@@ -7,14 +7,21 @@ import urllib.error
 import ssl
 from typing import Any
 from ..statusbar.spinner import ClaudetteSpinner
-from ..constants import ANTHROPIC_VERSION, DEFAULT_MODEL, DEFAULT_BASE_URL, MAX_TOKENS, SETTINGS_FILE, DEFAULT_VERIFY_SSL
-from ..utils import claudette_get_api_key_value, claudette_chat_status_message
+from ..constants import (
+    ANTHROPIC_VERSION, DEFAULT_MODEL, DEFAULT_BASE_URL, MAX_TOKENS, SETTINGS_FILE, DEFAULT_VERIFY_SSL,
+    AUTH_MODE_API_KEY, AUTH_MODE_OAUTH, OAUTH_BETA_HEADER
+)
+from ..utils import (
+    claudette_get_api_key_value, claudette_chat_status_message,
+    claudette_get_auth_mode, claudette_get_auth_header, claudette_validate_oauth_setup
+)
 from ..tools.text_editor import run_text_editor_tool, get_allowed_roots, resolve_path
 
 class ClaudetteClaudeAPI:
     def __init__(self):
         self.settings = sublime.load_settings(SETTINGS_FILE)
-        self.api_key = claudette_get_api_key_value()
+        self.auth_mode = claudette_get_auth_mode()
+        self.api_key = claudette_get_api_key_value()  # Keep for backward compatibility
         self.base_url = self.settings.get('base_url', DEFAULT_BASE_URL)
         try:
             self.max_tokens = int(self.settings.get('max_tokens', MAX_TOKENS))
@@ -178,11 +185,14 @@ More content.
         Send a single non-streaming request. Returns (response_message_dict, usage_dict).
         response_message_dict has 'content' (list of blocks) and 'stop_reason'.
         """
+        auth_header_name, auth_header_value = claudette_get_auth_header()
         headers = {
-            'x-api-key': self.api_key,
+            auth_header_name: auth_header_value,
             'anthropic-version': ANTHROPIC_VERSION,
             'content-type': 'application/json',
         }
+        if self.auth_mode == AUTH_MODE_OAUTH:
+            headers['anthropic-beta'] = OAUTH_BETA_HEADER
 
         data = {
             'messages': messages,
@@ -228,8 +238,12 @@ More content.
         if not filtered:
             return
 
-        if not self.api_key:
-            handle_error("[Error] The API key is not set. Please check your API key configuration.")
+        auth_header_name, auth_header_value = claudette_get_auth_header()
+        if not auth_header_value:
+            if self.auth_mode == AUTH_MODE_OAUTH:
+                handle_error("[Error] OAuth authentication is not configured. Set the CLAUDE_CODE_OAUTH_TOKEN environment variable, or run 'claude login' in Claude Code CLI.")
+            else:
+                handle_error("[Error] The API key is not set. Please check your API key configuration.")
             return
 
         text_editor_tool = self._get_text_editor_tool_def()
@@ -486,18 +500,24 @@ More content.
         if not messages or not any(msg.get('content', '').strip() for msg in messages):
             return
 
-        if not self.api_key:
-            handle_error(f"[Error] The API key is not set. Please check your API key configuration.")
+        auth_header_name, auth_header_value = claudette_get_auth_header()
+        if not auth_header_value:
+            if self.auth_mode == AUTH_MODE_OAUTH:
+                handle_error("[Error] OAuth authentication is not configured. Set the CLAUDE_CODE_OAUTH_TOKEN environment variable, or run 'claude login' in Claude Code CLI.")
+            else:
+                handle_error("[Error] The API key is not set. Please check your API key configuration.")
             return
 
         try:
             self.spinner.start('Fetching response')
 
             headers = {
-                'x-api-key': self.api_key,
+                auth_header_name: auth_header_value,
                 'anthropic-version': ANTHROPIC_VERSION,
                 'content-type': 'application/json',
             }
+            if self.auth_mode == AUTH_MODE_OAUTH:
+                headers['anthropic-beta'] = OAUTH_BETA_HEADER
 
             filtered_messages = [
                 msg for msg in messages
@@ -824,31 +844,41 @@ More content.
                     else:
                         # Fallback to chunk_callback if window not available
                         handle_error(f'[Error] {display_message} Please update your model via Settings > Package Settings > Claudette > Select Model.')
+                elif e.code == 401:
+                    if self.auth_mode == AUTH_MODE_OAUTH:
+                        handle_error("[Error] OAuth authentication failed. Your session may have expired. Please run 'claude login' in Claude Code CLI to refresh your credentials.")
+                    else:
+                        handle_error("[Error] API key authentication failed. Please check your API key configuration.")
                 elif error_message:
                     handle_error("[Error] {0}".format(error_message))
                 else:
                     handle_error("[Error] {0}".format(str(e)))
             except urllib.error.URLError as e:
-                handle_error(f"[Error] {str(e)}")
+                handle_error("[Error] {0}".format(str(e)))
             finally:
                 self.spinner.stop()
 
         except Exception as e:
-            handle_error(f"[Error] {str(e)}")
+            handle_error("[Error] {0}".format(str(e)))
             self.spinner.stop()
 
     def fetch_models(self):
-
-        if not self.api_key:
-            sublime.error_message(f"The API key is undefined. Please check your API key configuration.")
+        auth_header_name, auth_header_value = claudette_get_auth_header()
+        if not auth_header_value:
+            if self.auth_mode == AUTH_MODE_OAUTH:
+                sublime.error_message("OAuth authentication is not configured. Set the CLAUDE_CODE_OAUTH_TOKEN environment variable, or run 'claude login' in Claude Code CLI.")
+            else:
+                sublime.error_message("The API key is undefined. Please check your API key configuration.")
             return []
 
         try:
             sublime.status_message('Fetching models')
             headers = {
-                'x-api-key': self.api_key,
+                auth_header_name: auth_header_value,
                 'anthropic-version': ANTHROPIC_VERSION,
             }
+            if self.auth_mode == AUTH_MODE_OAUTH:
+                headers['anthropic-beta'] = OAUTH_BETA_HEADER
 
             req = urllib.request.Request(
                 urllib.parse.urljoin(self.base_url, 'models'),
@@ -866,7 +896,10 @@ More content.
         except urllib.error.HTTPError as e:
             if e.code == 401:
                 print("Claude API: {0}".format(str(e)))
-                sublime.error_message("Authentication invalid when fetching the available models from the Claude API.")
+                if self.auth_mode == AUTH_MODE_OAUTH:
+                    sublime.error_message("OAuth authentication failed. Your session may have expired. Please run 'claude login' in Claude Code CLI to refresh your credentials.")
+                else:
+                    sublime.error_message("API key authentication failed. Please check your API key configuration.")
             else:
                 print("Claude API: {0}".format(str(e)))
                 sublime.error_message("An error occurred fetching the available models from the Claude API.")
