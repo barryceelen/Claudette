@@ -151,6 +151,29 @@ More content.
                     "text": selected_message.strip()
                 })
 
+        if self.settings.get('text_editor_tool', False) and chat_view:
+            view = getattr(chat_view, 'view', chat_view)
+            window = view.window() if view else None
+            if window:
+                allowed_roots = get_allowed_roots(window, self.settings)
+                if allowed_roots:
+                    lines = [
+                        "You have file access. Use paths relative to the project root(s) below.",
+                        "Use 'view' with '.' to list the project root, or with a path like 'chat/ask_question.py' to read a file.",
+                        "Top-level project structure:",
+                    ]
+                    for root in allowed_roots:
+                        try:
+                            names = sorted(os.listdir(root))[:50]
+                            entries = ", ".join(names) if names else "(empty)"
+                            lines.append("- {0}: {1}".format(root, entries))
+                        except OSError:
+                            lines.append("- {0}: (cannot list)".format(root))
+                    system_messages.append({
+                        "type": "text",
+                        "text": "\n".join(lines),
+                    })
+
         if chat_view:
             context_files = chat_view.settings().get('claudette_context_files', {})
             if context_files:
@@ -409,7 +432,8 @@ More content.
                                     if url:
                                         sources_lines.append("- [{0}]({1})".format(title, url))
                     
-                    # Display web search results first (directly under # Claude's Response)
+                    # Display web search results first (directly under # Claude's Response),
+                    # then text content
                     final_text = ''.join(text_parts)
                     if sources_lines:
                         sources_text = "### Search Results\n\n" + "\n".join(sources_lines) + "\n\n"
@@ -417,7 +441,6 @@ More content.
                             lambda t=sources_text: chunk_callback(t, is_done=False),
                             0
                         )
-                    # Display text content
                     if final_text:
                         sublime.set_timeout(
                             lambda t=final_text: chunk_callback(t, is_done=False),
