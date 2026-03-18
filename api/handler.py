@@ -52,8 +52,8 @@ class ClaudetteStreamingResponseHandler:
             return
 
         # Add line break when new sentence starts without separator (e.g. "results.Based")
-        if (chunk and chunk[0].isupper() and self._last_output_char in '.!?' and
-                not self.at_line_start):
+        if (chunk and chunk[0].isupper() and self._last_output_char is not None and
+                self._last_output_char in '.!?' and not self.at_line_start):
             self._output_text('\n')
             self.at_line_start = True
 
