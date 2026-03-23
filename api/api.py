@@ -41,6 +41,13 @@ class ClaudetteClaudeAPI:
             ssl_context.verify_mode = ssl.CERT_NONE
             return ssl_context
 
+    def _get_custom_headers(self):
+        """Return custom headers from settings, if any."""
+        custom = self.settings.get('custom_headers', {})
+        if isinstance(custom, dict):
+            return {str(k): str(v) for k, v in custom.items() if k}
+        return {}
+
     @staticmethod
     def get_valid_temperature(temp):
         try:
@@ -206,6 +213,7 @@ More content.
             'anthropic-version': ANTHROPIC_VERSION,
             'content-type': 'application/json',
         }
+        headers.update(self._get_custom_headers())
 
         data = {
             'messages': messages,
@@ -521,6 +529,7 @@ More content.
                 'anthropic-version': ANTHROPIC_VERSION,
                 'content-type': 'application/json',
             }
+            headers.update(self._get_custom_headers())
 
             filtered_messages = [
                 msg for msg in messages
@@ -872,6 +881,7 @@ More content.
                 'x-api-key': self.api_key,
                 'anthropic-version': ANTHROPIC_VERSION,
             }
+            headers.update(self._get_custom_headers())
 
             req = urllib.request.Request(
                 urllib.parse.urljoin(self.base_url, 'models'),

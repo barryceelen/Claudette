@@ -31,6 +31,9 @@
 	// WARNING: Disabling SSL verification reduces security and should only be
 	// used in trusted development environments.
 	"verify_ssl": true,
+	// Optional: custom headers to include in all API requests.
+	// Format: {"Header-Name": "header-value", "Another-Header": "another-value"}
+	"custom_headers": {},
 	// Maximum number of output tokens per response. Must not exceed the
 	// selected model's output limit. The API will return a 400 error if this
 	// value exceeds the model's maximum. Common limits:
