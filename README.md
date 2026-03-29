@@ -1,6 +1,6 @@
 # Claudette – Claude AI Assistant for Sublime Text
 
-![Claude Chat View](https://raw.githubusercontent.com/barryceelen/Claudette/main/screenshot.png "Ask Claude")
+![Claudette Chat View](https://raw.githubusercontent.com/barryceelen/Claudette/main/screenshot.png "Ask Claude")
 
 A [Sublime Text](http://www.sublimetext.com) package that integrates the Anthropic Claude AI API into your editor.
 
@@ -37,12 +37,12 @@ Clear the chat history to reduce token usage while keeping previous messages vis
 Save any Claude chat conversation. Run this command to export the most recently active chat view in the current window to a JSON file.
 
 - **Import Chat History**  
-*claudette\_export\_chat\_history*  
+*claudette\_import\_chat\_history*  
 Import a chat history JSON file and continue the conversation where it left off.
 
 - **Add File to Chat**  
 *claudette\_context\_add\_files*  
-Available as a context menu item in the file list. Include on or more files or the content of a folder to the chat context.
+Available as a context menu item in the file list. Include one or more files or the content of a folder to the chat context.
 
 - **Add Current File To Chat**  
 *claudette\_context\_add\_current\_file*  
@@ -50,7 +50,7 @@ Add the content of the currently open view to the chat context.
 
 - **Remove Current File From Chat**  
 *claudette\_context\_remove\_current\_file*  
-Remove the content of the currently open view to the chat context, if it has been added before.
+Remove the content of the currently open view from the chat context, if it has been added before.
 
 - **Add All Open Files To Chat**  
 *claudette\_context\_add\_open\_files*  
@@ -115,9 +115,13 @@ For Linux and Windows:
 5. Get an API key from [Anthropic](https://console.anthropic.com/)
 6. Configure API key in *Preferences > Package Settings > Claudette > Settings*
 
+## What's new
+
+[Release History](https://github.com/barryceelen/Claudette/releases)
+
 ## Privacy & legal
 
-All code that you share with the Anthropic Claude API, for example by including it in a chat, will be sent to Anthropic's servers. For information about Anthropic's privacy practices, data processing, and legal compliance, please visit the [Privacy & Legal documentation](https://support.anthropic.com/en/collections/4078534-privacy-legal).
+Everything that you share with the Anthropic Claude API, for example by including it in a chat, will be sent to Anthropic's servers. For information about Anthropic's privacy practices, data processing, and legal compliance, please visit the Anthropic [Privacy & Legal documentation](https://support.anthropic.com/en/collections/4078534-privacy-legal).
 
 ## Credits
 
