@@ -322,11 +322,42 @@ More content.
                     if chat_view_for_status:
                         sublime.set_timeout(lambda: chat_view_for_status.clear_tool_status(), 0)
                     error_content = e.read().decode('utf-8')
+                    error_type = ''
+                    error_message = ''
                     try:
                         err_data = json.loads(error_content)
+                        error_type = err_data.get('error', {}).get('type', '')
                         error_message = err_data.get('error', {}).get('message', str(e))
                     except (json.JSONDecodeError, AttributeError, KeyError):
                         error_message = str(e)
+                    if (
+                        e.code in (400, 404)
+                        and error_type in ('invalid_request_error', 'not_found_error')
+                        and error_message.startswith('model:')
+                    ):
+                        error_model = error_message.replace('model:', '').strip()
+                        display_message = f'The "{error_model}" model does not exist.'
+                        if window:
+                            from ..chat.chat_view import ClaudetteChatView
+
+                            message_end_position = claudette_chat_status_message(
+                                window,
+                                display_message,
+                                "⚠️"
+                            )
+                            if message_end_position >= 0:
+                                try:
+                                    chat_view_instance = ClaudetteChatView.get_instance(window, settings)
+                                    if chat_view_instance:
+                                        chat_view_instance.add_select_model_button(message_end_position)
+                                except Exception as ex:
+                                    print(f"Error adding select model button: {str(ex)}")
+                        else:
+                            handle_error(
+                                f'[Error] {display_message} Please update your model via '
+                                'Settings > Package Settings > Claudette > Select Model.'
+                            )
+                        return
                     handle_error("[Error] {0}".format(error_message))
                     return
                 except urllib.error.URLError as e:
@@ -821,8 +852,13 @@ More content.
                 except (json.JSONDecodeError, AttributeError, KeyError):
                     pass
 
-                # Check if it's a 404 model-not-found error
-                if e.code == 404 and error_type == 'not_found_error' and error_message.startswith('model:'):
+                # Unknown model: API may return 404 + not_found_error or 400 + invalid_request_error
+                # (invalid model names are often treated as invalid_request_error with message "model: …").
+                if (
+                    e.code in (400, 404)
+                    and error_type in ('invalid_request_error', 'not_found_error')
+                    and error_message.startswith('model:')
+                ):
                     # Extract the model name from the error message
                     # Format: "model: claude-sonnet-4-5-latest"
                     error_model = error_message.replace('model:', '').strip()
