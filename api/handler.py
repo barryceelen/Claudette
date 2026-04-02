@@ -1,3 +1,5 @@
+import sublime
+
 class ClaudetteStreamingResponseHandler:
     def __init__(self, view, on_complete=None, response_header_end=None):
         self.view = view

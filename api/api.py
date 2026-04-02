@@ -5,7 +5,6 @@ import urllib.request
 import urllib.parse
 import urllib.error
 import ssl
-from typing import Any
 from ..statusbar.spinner import ClaudetteSpinner
 from ..constants import ANTHROPIC_VERSION, DEFAULT_MODEL, DEFAULT_BASE_URL, MAX_TOKENS, SETTINGS_FILE, DEFAULT_VERIFY_SSL
 from ..utils import claudette_get_api_key_value, claudette_chat_status_message
