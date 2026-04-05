@@ -8,7 +8,6 @@ and returns results for tool_result blocks.
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
-
 def get_allowed_roots(window, settings) -> List[str]:
     """
     Return list of allowed filesystem roots for the text editor tool.
