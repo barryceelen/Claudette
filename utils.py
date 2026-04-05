@@ -1,9 +1,10 @@
 import sublime
 import os
 from pathlib import Path
+from typing import Optional
 from .constants import SETTINGS_FILE
 
-def claudette_chat_status_message(window, message: str, prefix: str = "ℹ️", copy_path: str = None) -> int:
+def claudette_chat_status_message(window, message: str, prefix: str = "ℹ️", copy_path: Optional[str] = None) -> int:
     """
     Display a status message in the active chat view.
 
