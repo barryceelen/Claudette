@@ -1,4 +1,4 @@
-ANTHROPIC_VERSION = "2023-06-01";
+ANTHROPIC_VERSION = "2023-06-01"
 DEFAULT_MODEL = "claude-sonnet-4-5"
 DEFAULT_BASE_URL = "https://api.anthropic.com/v1/"
 MAX_TOKENS = 8192

@@ -83,7 +83,7 @@ class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
         if not self.create_chat_panel():
             return
 
-        api_key = claudette_get_api_key_value();
+        api_key = claudette_get_api_key_value()
 
         if not api_key:
             window = self.get_window()
