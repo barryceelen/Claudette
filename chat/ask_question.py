@@ -45,28 +45,8 @@ class ClaudetteAskQuestionCommand(sublime_plugin.TextCommand):
 
         try:
             if force_new:
-                new_view = window.new_file()
-                if not new_view:
-                    raise Exception("Could not create new view")
-
-                new_view.set_scratch(True)
-                new_view.set_name("Claude Chat")
-                new_view.assign_syntax('Packages/Markdown/Markdown.sublime-syntax')
-                new_view.settings().set('claudette_is_chat_view', True)
-                new_view.settings().set('claudette_is_current_chat', True)
-
-                for view in window.views():
-                    if view != new_view and view.settings().get('claudette_is_chat_view', False):
-                        view.settings().set('claudette_is_current_chat', False)
-
-                # Create a new chat view instance for this view
-                self.chat_view = ClaudetteChatView(window, self.settings)
-                self.chat_view.view = new_view
-
-                # Register the new instance
-                ClaudetteChatView._instances[window.id()] = self.chat_view
-
-                return new_view
+                self.chat_view = ClaudetteChatView.get_instance(window, self.settings)
+                return self.chat_view.create_new_chat_view()
             else:
                 self.chat_view = ClaudetteChatView.get_instance(window, self.settings)
                 return self.chat_view.create_or_get_view()

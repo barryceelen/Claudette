@@ -134,6 +134,30 @@ class ClaudetteChatView:
         self._tool_status_spinner_index = {}
         self._tool_status_message = {}
 
+    def _configure_new_chat_view(self, view):
+        """Apply name, syntax, scratch, read-only, and claudette_* settings from package settings."""
+        chat_settings = self.settings.get('chat', {})
+        line_numbers = chat_settings.get('line_numbers', False)
+        rulers = chat_settings.get('rulers', False)
+        set_scratch = chat_settings.get('set_scratch', True)
+
+        view.set_name("Claude Chat")
+        view.set_scratch(set_scratch)
+        view.assign_syntax('Packages/Markdown/Markdown.sublime-syntax')
+        view.set_read_only(True)
+        view.settings().set("line_numbers", line_numbers)
+        view.settings().set("rulers", rulers)
+        view.settings().set("claudette_is_chat_view", True)
+        view.settings().set("claudette_conversation", [])
+
+    @staticmethod
+    def _mark_only_current_chat(window, new_view):
+        """Set new_view as the current chat; clear current flag on other chat views in the window."""
+        for v in window.views():
+            if v != new_view and v.settings().get('claudette_is_chat_view', False):
+                v.settings().set('claudette_is_current_chat', False)
+        new_view.settings().set('claudette_is_current_chat', True)
+
     def create_or_get_view(self):
         """Create a new chat view or return an existing one."""
         try:
@@ -159,20 +183,8 @@ class ClaudetteChatView:
                 sublime.error_message(f"{PLUGIN_NAME} Error: Could not create new file")
                 return None
 
-            chat_settings = self.settings.get('chat', {})
-            line_numbers = chat_settings.get('line_numbers', False)
-            rulers = chat_settings.get('rulers', False)
-            set_scratch = chat_settings.get('set_scratch', True)
-
-            self.view.set_name("Claude Chat")
-            self.view.set_scratch(set_scratch)
-            self.view.assign_syntax('Packages/Markdown/Markdown.sublime-syntax')
-            self.view.set_read_only(True)
-            self.view.settings().set("line_numbers", line_numbers)
-            self.view.settings().set("rulers", rulers)
-            self.view.settings().set("claudette_is_chat_view", True)
-            self.view.settings().set("claudette_is_current_chat", True)
-            self.view.settings().set("claudette_conversation", [])
+            self._configure_new_chat_view(self.view)
+            self._mark_only_current_chat(self.window, self.view)
 
             return self.view
 
@@ -180,6 +192,18 @@ class ClaudetteChatView:
             print(f"{PLUGIN_NAME} Error creating chat panel: {str(e)}")
             sublime.error_message(f"{PLUGIN_NAME} Error: Could not create chat panel")
             return None
+
+    def create_new_chat_view(self):
+        """Create an additional chat tab and make it the current chat for this window."""
+        new_view = self.window.new_file()
+        if not new_view:
+            print(f"{PLUGIN_NAME} Error: Could not create new file")
+            sublime.error_message(f"{PLUGIN_NAME} Error: Could not create new file")
+            return None
+        self._configure_new_chat_view(new_view)
+        self._mark_only_current_chat(self.window, new_view)
+        self.view = new_view
+        return new_view
 
     def get_phantom_set(self, view):
         """Get or create a phantom set for the specific view."""
