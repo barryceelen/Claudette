@@ -9,6 +9,10 @@ from ..statusbar.spinner import ClaudetteSpinner
 from ..constants import ANTHROPIC_VERSION, DEFAULT_MODEL, DEFAULT_BASE_URL, MAX_TOKENS, SETTINGS_FILE, DEFAULT_VERIFY_SSL
 from ..utils import claudette_get_api_key_value, claudette_chat_status_message
 from ..tools.text_editor import run_text_editor_tool, get_allowed_roots, resolve_path
+from .tools import build_web_search_tool_def, build_text_editor_tool_def, parse_web_search_items, format_search_results
+from .errors import parse_api_error, is_model_not_found_error, handle_model_not_found
+from . import session_stats
+from .session_stats import update_session_stats, format_status_message
 
 class ClaudetteClaudeAPI:
     def __init__(self):
@@ -57,37 +61,6 @@ class ClaudetteClaudeAPI:
         except (TypeError, ValueError):
             return 1.0
 
-    def calculate_cost(self, input_tokens, output_tokens, cache_read_tokens=0, cache_write_tokens=0, model=None):
-        """Calculate cost based on token usage and model.
-
-        Args:
-            input_tokens: Number of input tokens
-            output_tokens: Number of output tokens
-            cache_read_tokens: Number of tokens read from cache
-            cache_write_tokens: Number of tokens written to cache
-            model: Model name (optional, defaults to current model)
-        """
-        if model is None:
-            model = self.model
-
-        price_tier = None
-        model_lower = model.lower()
-
-        for tier in self.pricing.keys():
-            if tier in model_lower:
-                price_tier = self.pricing[tier]
-                break
-
-        if not price_tier:
-            return 0
-
-        input_cost = ((input_tokens - cache_read_tokens) / 1000) * price_tier['input']
-        output_cost = (output_tokens / 1000) * price_tier['output']
-        cache_write_cost = (cache_write_tokens / 1000) * price_tier.get('cache_write', 0)
-        cache_read_cost = (cache_read_tokens / 1000) * price_tier.get('cache_read', 0)
-
-        return input_cost + output_cost + cache_write_cost + cache_read_cost
-
     @staticmethod
     def _message_has_content(msg):
         """Return True if message has content to send (string or list for tool turns)."""
@@ -100,26 +73,7 @@ class ClaudetteClaudeAPI:
 
     def _get_text_editor_tool_def(self):
         """Return text editor tool definition for current model, or None if disabled."""
-        if not self.settings.get('text_editor_tool', False):
-            return None
-        model_lower = (self.model or '').lower()
-        if 'claude-3-7' in model_lower:
-            tool_def = {
-                'type': 'text_editor_20250124',
-                'name': 'str_replace_editor',
-            }
-        else:
-            tool_def = {
-                'type': 'text_editor_20250728',
-                'name': 'str_replace_based_edit_tool',
-            }
-            try:
-                max_chars = int(self.settings.get('text_editor_tool_max_characters', 0))
-                if max_chars > 0:
-                    tool_def['max_characters'] = max_chars
-            except (TypeError, ValueError):
-                pass
-        return tool_def
+        return build_text_editor_tool_def(self.settings, self.model)
 
     def _build_system_messages(self, chat_view=None):
         """Build system messages list (with optional context files)."""
@@ -268,34 +222,9 @@ More content.
             return
 
         tools_list = [text_editor_tool]
-        if self.settings.get('web_search', False):
-            try:
-                max_uses = int(self.settings.get('web_search_max_uses', 5))
-                max_uses = max(1, min(20, max_uses))
-            except (TypeError, ValueError):
-                max_uses = 5
-            tool_def = {
-                'type': 'web_search_20250305',
-                'name': 'web_search',
-                'max_uses': max_uses
-            }
-            allowed = self.settings.get('web_search_allowed_domains')
-            blocked = self.settings.get('web_search_blocked_domains')
-            if allowed and isinstance(allowed, list) and len(allowed) > 0:
-                tool_def['allowed_domains'] = [str(d).strip() for d in allowed if str(d).strip()]
-            elif blocked and isinstance(blocked, list) and len(blocked) > 0:
-                tool_def['blocked_domains'] = [str(d).strip() for d in blocked if str(d).strip()]
-            user_loc = self.settings.get('web_search_user_location')
-            if (user_loc and isinstance(user_loc, dict) and user_loc.get('type') == 'approximate' and
-                    (user_loc.get('city') or user_loc.get('country') or user_loc.get('timezone'))):
-                tool_def['user_location'] = {
-                    'type': 'approximate',
-                    'city': str(user_loc.get('city', '')),
-                    'region': str(user_loc.get('region', '')),
-                    'country': str(user_loc.get('country', '')),
-                    'timezone': str(user_loc.get('timezone', ''))
-                }
-            tools_list.append(tool_def)
+        web_search_tool = build_web_search_tool_def(self.settings)
+        if web_search_tool:
+            tools_list.append(web_search_tool)
 
         # chat_view may be the sublime View or a ClaudetteChatView (has .view, .set_tool_status, .clear_tool_status).
         view_for_api = getattr(chat_view, 'view', chat_view)
@@ -320,42 +249,9 @@ More content.
                     self.spinner.stop()
                     if chat_view_for_status:
                         sublime.set_timeout(lambda: chat_view_for_status.clear_tool_status(), 0)
-                    error_content = e.read().decode('utf-8')
-                    error_type = ''
-                    error_message = ''
-                    try:
-                        err_data = json.loads(error_content)
-                        error_type = err_data.get('error', {}).get('type', '')
-                        error_message = err_data.get('error', {}).get('message', str(e))
-                    except (json.JSONDecodeError, AttributeError, KeyError):
-                        error_message = str(e)
-                    if (
-                        e.code in (400, 404)
-                        and error_type in ('invalid_request_error', 'not_found_error')
-                        and error_message.startswith('model:')
-                    ):
-                        error_model = error_message.replace('model:', '').strip()
-                        display_message = f'The "{error_model}" model does not exist.'
-                        if window:
-                            from ..chat.chat_view import ClaudetteChatView
-
-                            message_end_position = claudette_chat_status_message(
-                                window,
-                                display_message,
-                                "⚠️"
-                            )
-                            if message_end_position >= 0:
-                                try:
-                                    chat_view_instance = ClaudetteChatView.get_instance(window, settings)
-                                    if chat_view_instance:
-                                        chat_view_instance.add_select_model_button(message_end_position)
-                                except Exception as ex:
-                                    print(f"Error adding select model button: {str(ex)}")
-                        else:
-                            handle_error(
-                                f'[Error] {display_message} Please update your model via '
-                                'Settings > Package Settings > Claudette > Select Model.'
-                            )
+                    error_type, error_message = parse_api_error(e)
+                    if is_model_not_found_error(e.code, error_type, error_message):
+                        handle_model_not_found(error_message, window, settings, handle_error)
                         return
                     handle_error("[Error] {0}".format(error_message))
                     return
@@ -452,29 +348,22 @@ More content.
                         sublime.set_timeout(lambda: chat_view_for_status.clear_tool_status(), 0)
                     text_parts = []
                     sources_lines = []
-                    
+
                     # Process all content blocks (text and web search results)
                     for block in content:
                         if not isinstance(block, dict):
                             continue
-                        if isinstance(block, dict) and block.get('type') == 'text' and block.get('text'):
+                        if block.get('type') == 'text' and block.get('text'):
                             text_parts.append(block['text'])
                         elif block.get('type') == 'web_search_tool_result':
-                            # Extract web search results
-                            for item in block.get('content', []):
-                                if not isinstance(item, dict):
-                                    continue
-                                if item.get('type') == 'web_search_result':
-                                    url = item.get('url', '')
-                                    title = item.get('title', url)
-                                    if url:
-                                        sources_lines.append("- [{0}]({1})".format(title, url))
-                    
+                            items_lines, _ = parse_web_search_items(block.get('content', []))
+                            sources_lines.extend(items_lines)
+
                     # Display web search results first (directly under # Claude's Response),
                     # then text content
                     final_text = ''.join(text_parts)
-                    if sources_lines:
-                        sources_text = "### Search Results\n\n" + "\n".join(sources_lines) + "\n\n"
+                    sources_text = format_search_results(sources_lines)
+                    if sources_text:
                         sublime.set_timeout(
                             lambda t=sources_text: chunk_callback(t, is_done=False),
                             0
@@ -486,29 +375,34 @@ More content.
                         )
                     input_tokens = usage.get('input_tokens', 0)
                     output_tokens = usage.get('output_tokens', 0)
-                    if view_for_api and hasattr(view_for_api, 'settings'):
-                        sess = view_for_api.settings().get('claudette_session_stats', {
-                            'input_tokens': 0, 'output_tokens': 0, 'cost': 0.0, 'web_search_requests': 0
-                        })
-                        if 'web_search_requests' not in sess:
-                            sess['web_search_requests'] = 0
-                        sess['input_tokens'] = sess.get('input_tokens', 0) + input_tokens
-                        sess['output_tokens'] = sess.get('output_tokens', 0) + output_tokens
-                        sess['cost'] = sess.get('cost', 0.0) + self.calculate_cost(input_tokens, output_tokens)
-                        view_for_api.settings().set('claudette_session_stats', sess)
+                    cache_read_tokens = usage.get('cache_read_input_tokens', 0)
+                    cache_write_tokens = usage.get('cache_write_input_tokens', 0)
+                    server_tool_use = usage.get('server_tool_use', {})
+                    web_search_requests = server_tool_use.get('web_search_requests', 0)
+
+                    current_cost = session_stats.calculate_cost(
+                        self.pricing, self.model,
+                        input_tokens, output_tokens,
+                        cache_read_tokens=cache_read_tokens,
+                        cache_write_tokens=cache_write_tokens
+                    )
+                    web_search_cost = web_search_requests * (10.0 / 1000)
+                    current_cost += web_search_cost
+                    sess = update_session_stats(
+                        view_for_api, input_tokens, output_tokens,
+                        current_cost, web_search_requests
+                    )
+                    if sess:
                         cache_info = ""
                         if usage.get('cache_read_input_tokens'):
                             cache_info = " (cache read: {0:,})".format(usage.get('cache_read_input_tokens', 0))
                         elif usage.get('cache_write_input_tokens'):
                             cache_info = " (cache write: {0:,})".format(usage.get('cache_write_input_tokens', 0))
-                        status_message = "Tokens: {0:,} sent, {1:,} received{2}.".format(
-                            input_tokens, output_tokens, cache_info
+                        status_msg = format_status_message(
+                            input_tokens, output_tokens, cache_info,
+                            current_cost, sess['cost']
                         )
-                        if sess.get('cost', 0) > 0:
-                            status_message += " Cost: ${0:.4f} message, ${1:.4f} session.".format(
-                                self.calculate_cost(input_tokens, output_tokens), sess['cost']
-                            )
-                        sublime.set_timeout(lambda s=status_message: sublime.status_message(s), 100)
+                        sublime.set_timeout(lambda s=status_msg: sublime.status_message(s), 100)
                     sublime.set_timeout(
                         lambda: chunk_callback("", is_done=True),
                         0
@@ -577,34 +471,9 @@ More content.
                 'temperature': self.get_valid_temperature(self.temperature)
             }
 
-            if self.settings.get('web_search', False):
-                try:
-                    max_uses = int(self.settings.get('web_search_max_uses', 5))
-                    max_uses = max(1, min(20, max_uses))
-                except (TypeError, ValueError):
-                    max_uses = 5
-                tool_def = {
-                    'type': 'web_search_20250305',
-                    'name': 'web_search',
-                    'max_uses': max_uses
-                }
-                allowed = self.settings.get('web_search_allowed_domains')
-                blocked = self.settings.get('web_search_blocked_domains')
-                if allowed and isinstance(allowed, list) and len(allowed) > 0:
-                    tool_def['allowed_domains'] = [str(d).strip() for d in allowed if str(d).strip()]
-                elif blocked and isinstance(blocked, list) and len(blocked) > 0:
-                    tool_def['blocked_domains'] = [str(d).strip() for d in blocked if str(d).strip()]
-                user_loc = self.settings.get('web_search_user_location')
-                if (user_loc and isinstance(user_loc, dict) and user_loc.get('type') == 'approximate' and
-                        (user_loc.get('city') or user_loc.get('country') or user_loc.get('timezone'))):
-                    tool_def['user_location'] = {
-                        'type': 'approximate',
-                        'city': str(user_loc.get('city', '')),
-                        'region': str(user_loc.get('region', '')),
-                        'country': str(user_loc.get('country', '')),
-                        'timezone': str(user_loc.get('timezone', ''))
-                    }
-                data['tools'] = [tool_def]
+            web_search_tool = build_web_search_tool_def(self.settings)
+            if web_search_tool:
+                data['tools'] = [web_search_tool]
 
             req = urllib.request.Request(
                 urllib.parse.urljoin(self.base_url, 'messages'),
@@ -618,22 +487,6 @@ More content.
                 stream_web_search_sources = []
                 stream_current_block_type = None
                 stream_current_block_index = None
-
-                def parse_web_search_items(items):
-                    lines = []
-                    has_error = False
-                    for item in (items or []):
-                        if not isinstance(item, dict):
-                            continue
-                        if item.get('type') == 'web_search_tool_result_error':
-                            has_error = True
-                            break
-                        if item.get('type') == 'web_search_result':
-                            url = item.get('url', '')
-                            title = item.get('title', url)
-                            if url:
-                                lines.append("- [{0}]({1})".format(title, url))
-                    return lines, has_error
 
                 with urllib.request.urlopen(req, context=ssl_context) as response:
                     for line in response:
@@ -728,9 +581,7 @@ More content.
                                     and stream_current_block_type == 'web_search_tool_result'
                                     and stream_web_search_sources
                                 ):
-                                    sources_text = "### Search Results\n\n" + "\n".join(
-                                        stream_web_search_sources
-                                    ) + "\n\n"
+                                    sources_text = format_search_results(stream_web_search_sources)
                                     sublime.set_timeout(
                                         lambda cb=chunk_callback, text=sources_text: cb(
                                             text, is_done=False, insert_after_response_header=True
@@ -777,56 +628,30 @@ More content.
                                 web_search_requests = server_tool_use.get('web_search_requests', 0)
 
                                 # Calculate current response cost including cache and web search
-                                current_cost = self.calculate_cost(
-                                    input_tokens,
-                                    output_tokens,
+                                current_cost = session_stats.calculate_cost(
+                                    self.pricing, self.model,
+                                    input_tokens, output_tokens,
                                     cache_read_tokens=cache_read_tokens,
                                     cache_write_tokens=cache_write_tokens
                                 )
                                 web_search_cost = web_search_requests * (10.0 / 1000)
                                 current_cost += web_search_cost
 
-                                # Format current cost
-                                current_cost_str = f"${current_cost:.4f}"
-
                                 # Update chat view's session stats
-                                if chat_view and hasattr(chat_view, 'settings'):
-                                    settings = chat_view.settings()
+                                sess = update_session_stats(
+                                    chat_view, input_tokens, output_tokens,
+                                    current_cost, web_search_requests
+                                )
+                                session_cost = sess['cost'] if sess else current_cost
 
-                                    # Get current session stats from settings
-                                    session_stats = settings.get('claudette_session_stats', {
-                                        'input_tokens': 0,
-                                        'output_tokens': 0,
-                                        'cost': 0.0,
-                                        'web_search_requests': 0
-                                    })
-                                    if 'web_search_requests' not in session_stats:
-                                        session_stats['web_search_requests'] = 0
+                                status_msg = format_status_message(
+                                    input_tokens, output_tokens, cache_info,
+                                    current_cost, session_cost
+                                )
 
-                                    # Update session totals
-                                    session_stats['input_tokens'] += input_tokens
-                                    session_stats['output_tokens'] += output_tokens
-                                    session_stats['web_search_requests'] += web_search_requests
-                                    session_stats['cost'] += current_cost
-
-                                    # Save updated stats back to settings
-                                    settings.set('claudette_session_stats', session_stats)
-
-                                    session_cost_str = f"${session_stats['cost']:.4f}"
-                                else:
-                                    session_cost_str = f"${current_cost:.4f}"
-
-                                status_message = f"Tokens: {input_tokens:,} sent, {output_tokens:,} received{cache_info}."
-
-                                if session_stats['cost'] > 0:
-                                    status_message_cost = f" Cost: {current_cost_str} message, {session_cost_str} session."
-                                    status_message = status_message + status_message_cost
-
-                                # Schedule status message on main thread with a delay
-                                def show_delayed_status():
-                                    sublime.status_message(status_message)
-
-                                sublime.set_timeout(show_delayed_status, 100)
+                                sublime.set_timeout(
+                                    lambda s=status_msg: sublime.status_message(s), 100
+                                )
 
                                 # Signal completion
                                 sublime.set_timeout(
@@ -838,63 +663,12 @@ More content.
                             continue # Skip invalid chunks without error messages
 
             except urllib.error.HTTPError as e:
-                error_content = e.read().decode('utf-8')
-                print("Claude API Error Content:", error_content)
-
-                # Try to parse the API error message from the response body
-                error_type = ''
-                error_message = ''
-                try:
-                    error_data = json.loads(error_content)
-                    error_type = error_data.get('error', {}).get('type', '')
-                    error_message = error_data.get('error', {}).get('message', '')
-                except (json.JSONDecodeError, AttributeError, KeyError):
-                    pass
-
-                # Unknown model: API may return 404 + not_found_error or 400 + invalid_request_error
-                # (invalid model names are often treated as invalid_request_error with message "model: …").
-                if (
-                    e.code in (400, 404)
-                    and error_type in ('invalid_request_error', 'not_found_error')
-                    and error_message.startswith('model:')
-                ):
-                    # Extract the model name from the error message
-                    # Format: "model: claude-sonnet-4-5-latest"
-                    error_model = error_message.replace('model:', '').strip()
-
-                    display_message = f'The "{error_model}" model does not exist.'
-
-                    # Get window from chat_view (which is a sublime.View)
-                    window = None
-                    if chat_view:
-                        window = chat_view.window()
-
-                    if window:
-                        from ..utils import claudette_chat_status_message
-                        from ..chat.chat_view import ClaudetteChatView
-
-                        # Display the error message and get the end position
-                        message_end_position = claudette_chat_status_message(
-                            window,
-                            display_message,
-                            "⚠️"
-                        )
-
-                        # Add a button to open the select model panel
-                        if message_end_position >= 0:
-                            try:
-                                chat_view_instance = ClaudetteChatView.get_instance(window, self.settings)
-                                if chat_view_instance:
-                                    chat_view_instance.add_select_model_button(message_end_position)
-                            except Exception as e:
-                                print(f"Error adding select model button: {str(e)}")
-                    else:
-                        # Fallback to chunk_callback if window not available
-                        handle_error(f'[Error] {display_message} Please update your model via Settings > Package Settings > Claudette > Select Model.')
-                elif error_message:
-                    handle_error("[Error] {0}".format(error_message))
+                error_type, error_message = parse_api_error(e)
+                if is_model_not_found_error(e.code, error_type, error_message):
+                    window = chat_view.window() if chat_view else None
+                    handle_model_not_found(error_message, window, self.settings, handle_error)
                 else:
-                    handle_error("[Error] {0}".format(str(e)))
+                    handle_error("[Error] {0}".format(error_message))
             except urllib.error.URLError as e:
                 handle_error(f"[Error] {str(e)}")
             finally:
