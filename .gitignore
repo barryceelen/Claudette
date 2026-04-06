@@ -1,5 +1,6 @@
 .aider*
 .env
+.venv
 repomix-output.*
 
 # Python
