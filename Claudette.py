@@ -29,6 +29,13 @@ def plugin_loaded():
     spinner = ClaudetteSpinner()
     spinner.start("Claudette", 1000)
 
+def plugin_unloaded():
+    from .chat.chat_view import ClaudetteChatView
+    from .utils import claudette_clear_copy_path_phantom_registry
+
+    ClaudetteChatView._instances.clear()
+    claudette_clear_copy_path_phantom_registry()
+
 class ClaudetteFocusListener(sublime_plugin.EventListener):
     def on_activated(self, view):
         if view.settings().get('claudette_is_chat_view', False):

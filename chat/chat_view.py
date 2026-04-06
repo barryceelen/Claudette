@@ -5,6 +5,7 @@ import re
 from typing import List, Set
 from dataclasses import dataclass
 from ..constants import PLUGIN_NAME, SPINNER_CHARS, SPINNER_INTERVAL_MS
+from ..utils import claudette_cleanup_copy_path_phantoms_for_view
 
 @dataclass
 class ClaudetteCodeBlock:
@@ -34,10 +35,39 @@ class ClaudetteChatViewListener(sublime_plugin.ViewEventListener):
                 sublime.status_message(f"Claudette error: {str(e)}")
         return None
 
+    def on_close(self):
+        ClaudetteChatView.cleanup_for_closed_view(self.view)
+        claudette_cleanup_copy_path_phantoms_for_view(self.view)
+
 class ClaudetteChatView:
     """Manages chat views for the Claudette plugin."""
 
     _instances = {}
+
+    @staticmethod
+    def _manager_handles_view_id(mgr, view_id):
+        if mgr.view is not None and mgr.view.id() == view_id:
+            return True
+        if view_id in mgr.phantom_sets:
+            return True
+        if view_id in mgr._tool_status_phantom_sets:
+            return True
+        if view_id in mgr.existing_button_positions:
+            return True
+        return False
+
+    @staticmethod
+    def _manager_is_orphaned(mgr):
+        """True if no primary view and no per-view state left."""
+        return (
+            mgr.view is None
+            and not mgr.phantom_sets
+            and not mgr.existing_button_positions
+            and not mgr._tool_status_phantom_sets
+            and not mgr._tool_status_active
+            and not mgr._tool_status_spinner_index
+            and not mgr._tool_status_message
+        )
 
     @classmethod
     def get_instance(cls, window=None, settings=None):
@@ -53,6 +83,44 @@ class ClaudetteChatView:
             cls._instances[window_id] = cls(window, settings)
 
         return cls._instances[window_id]
+
+    @classmethod
+    def cleanup_for_closed_view(cls, view):
+        """Release per-view resources when a chat view is closed."""
+        if not view.settings().get('claudette_is_chat_view', False):
+            return
+        view_id = view.id()
+        window = view.window()
+        if window:
+            wid = window.id()
+            if wid not in cls._instances:
+                return
+            mgr = cls._instances[wid]
+            mgr._clear_view_resources(view_id)
+            chat_views = [
+                v for v in window.views()
+                if v.settings().get('claudette_is_chat_view', False)
+            ]
+            closed_was_primary = mgr.view is not None and mgr.view.id() == view_id
+            if not chat_views:
+                mgr.view = None
+                del cls._instances[wid]
+                return
+            if closed_was_primary:
+                mgr.view = chat_views[0]
+                mgr.view.settings().set('claudette_is_current_chat', True)
+                for v in chat_views[1:]:
+                    v.settings().set('claudette_is_current_chat', False)
+            return
+        for wid, mgr in list(cls._instances.items()):
+            if not cls._manager_handles_view_id(mgr, view_id):
+                continue
+            mgr._clear_view_resources(view_id)
+            if mgr.view is not None and mgr.view.id() == view_id:
+                mgr.view = None
+            if cls._manager_is_orphaned(mgr):
+                del cls._instances[wid]
+            break
 
     def __init__(self, window, settings):
         """Initialize the chat view manager."""
@@ -446,15 +514,24 @@ class ClaudetteChatView:
         """Create HTML for the copy button with optional language indicator."""
         return f'''<div class="code-block-button"><a class="copy-button" href="copy:{code}">Copy</a></div>'''
 
+    def _clear_view_resources(self, view_id):
+        """Clear phantoms and per-view state for a single view id."""
+        if view_id in self.phantom_sets:
+            self.phantom_sets[view_id].update([])
+            del self.phantom_sets[view_id]
+        if view_id in self.existing_button_positions:
+            del self.existing_button_positions[view_id]
+        if view_id in self._tool_status_phantom_sets:
+            self._tool_status_phantom_sets[view_id].update([])
+            del self._tool_status_phantom_sets[view_id]
+        self._tool_status_active.pop(view_id, None)
+        self._tool_status_spinner_index.pop(view_id, None)
+        self._tool_status_message.pop(view_id, None)
+
     def destroy(self):
         """Clean up the chat view and associated resources."""
         if self.view:
-            view_id = self.view.id()
-            if view_id in self.phantom_sets:
-                self.phantom_sets[view_id].update([])
-                del self.phantom_sets[view_id]
-            if view_id in self.existing_button_positions:
-                del self.existing_button_positions[view_id]
+            self._clear_view_resources(self.view.id())
 
         if self.window:
             window_id = self.window.id()

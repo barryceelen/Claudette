@@ -79,6 +79,20 @@ def claudette_chat_status_message(window, message: str, prefix: str = "ℹ️", 
 _copy_path_phantom_sets = {}
 
 
+def claudette_cleanup_copy_path_phantoms_for_view(view):
+    """Remove copy-path phantom state when a view is closed."""
+    view_id = view.id()
+    if view_id not in _copy_path_phantom_sets:
+        return
+    _copy_path_phantom_sets[view_id].update([])
+    del _copy_path_phantom_sets[view_id]
+
+
+def claudette_clear_copy_path_phantom_registry():
+    """Clear all copy-path phantom registry entries (e.g. on plugin unload)."""
+    _copy_path_phantom_sets.clear()
+
+
 def _add_copy_path_phantom(view, position: int, path: str):
     """
     Add a "Copy Path" phantom button at the specified position.
