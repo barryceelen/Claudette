@@ -1,0 +1,66 @@
+"""Minimal stubs for Sublime Text's embedded sublime module."""
+
+from typing import Any, Callable, Iterable, Sequence, Tuple, Union, overload
+
+
+def load_settings(name: str) -> Any: ...
+def save_settings(name: str) -> None: ...
+def error_message(msg: str) -> None: ...
+def status_message(msg: str) -> None: ...
+def active_window() -> Any: ...
+def windows() -> Sequence[Any]: ...
+def set_timeout(callback: Callable[..., Any], delay_ms: int) -> None: ...
+def set_timeout_async(callback: Callable[..., Any], delay_ms: int) -> None: ...
+def set_clipboard(text: str) -> None: ...
+def cache_path() -> str: ...
+
+
+def open_dialog(
+    callback: Callable[..., Any],
+    file_types: Iterable[Tuple[str, Iterable[str]]],
+    directory: Union[str, None] = ...,
+    multi_select: bool = ...,
+    allow_folders: bool = ...,
+) -> None: ...
+
+
+def save_dialog(
+    callback: Callable[..., Any],
+    file_types: Iterable[Tuple[str, Iterable[str]]],
+    directory: Union[str, None] = ...,
+    default_name: Union[str, None] = ...,
+    allow_folders: bool = ...,
+) -> None: ...
+
+
+def ok_cancel_dialog(msg: str, ok_title: str = ...) -> bool: ...
+
+
+class Region:
+    a: int
+    b: int
+
+    @overload
+    def __init__(self, pt: int) -> None: ...
+    @overload
+    def __init__(self, a: int, b: int) -> None: ...
+
+
+class Phantom:
+    def __init__(
+        self,
+        region: Region,
+        content: str,
+        layout: int,
+        on_navigate: Union[Callable[..., Any], None],
+    ) -> None: ...
+
+
+class PhantomSet:
+    def __init__(self, view: Any, key: str) -> None: ...
+    def update(self, phantoms: Sequence[Phantom]) -> None: ...
+
+
+LAYOUT_INLINE: int
+LAYOUT_BLOCK: int
+KEEP_OPEN_ON_FOCUS_LOST: int

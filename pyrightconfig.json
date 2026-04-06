@@ -1,0 +1,8 @@
+{
+	"include": ["."],
+	"exclude": [".git"],
+	"stubPath": "typings",
+	"pythonVersion": "3.8",
+	"typeCheckingMode": "basic",
+	"reportMissingModuleSource": "none"
+}
