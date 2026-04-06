@@ -1,6 +1,7 @@
 import sublime
 import sublime_plugin
 
+
 class ClaudetteContextAddOpenFilesCommand(sublime_plugin.WindowCommand):
     def run(self):
         # Get all open files in the window
@@ -14,4 +15,6 @@ class ClaudetteContextAddOpenFilesCommand(sublime_plugin.WindowCommand):
             sublime.status_message("No open files found to add to context")
             return
 
-        self.window.run_command('claudette_context_add_files', {'paths': open_files})
+        self.window.run_command(
+            "claudette_context_add_files", {"paths": open_files}
+        )

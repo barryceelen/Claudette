@@ -2,12 +2,10 @@
 
 from typing import Any
 
-
 class ApplicationCommand:
     """Base class for application commands."""
 
     def __init__(self) -> None: ...
-
 
 class WindowCommand:
     """Base class for window commands."""
@@ -16,7 +14,6 @@ class WindowCommand:
 
     def __init__(self, window: Any) -> None: ...
 
-
 class TextCommand:
     """Base class for text commands."""
 
@@ -24,13 +21,11 @@ class TextCommand:
 
     def __init__(self, view: Any) -> None: ...
 
-
 class EventListener:
     """Base class for event listeners."""
 
     def on_activated(self, view: Any) -> None: ...
     def on_load(self, view: Any) -> None: ...
-
 
 class ViewEventListener:
     """Base class for view event listeners."""

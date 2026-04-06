@@ -1,6 +1,8 @@
 import sublime
 import sublime_plugin
+
 from ..utils import claudette_chat_status_message
+
 
 class ClaudetteContextAddCurrentFileCommand(sublime_plugin.WindowCommand):
     def run(self):
@@ -13,12 +15,15 @@ class ClaudetteContextAddCurrentFileCommand(sublime_plugin.WindowCommand):
             sublime.status_message("Cannot add unsaved file to context")
             return
 
-        self.window.run_command('claudette_context_add_files', {'paths': [file_path]})
+        self.window.run_command(
+            "claudette_context_add_files", {"paths": [file_path]}
+        )
 
     def get_chat_view(self):
         for view in self.window.views():
-            if (view.settings().get('claudette_is_chat_view', False) and
-                view.settings().get('claudette_is_current_chat', False)):
+            if view.settings().get(
+                "claudette_is_chat_view", False
+            ) and view.settings().get("claudette_is_current_chat", False):
                 return view
         return None
 
@@ -28,7 +33,7 @@ class ClaudetteContextAddCurrentFileCommand(sublime_plugin.WindowCommand):
         if not view:
             return False
 
-        if view.settings().get('claudette_is_chat_view', False):
+        if view.settings().get("claudette_is_chat_view", False):
             return False
 
         if not view.file_name():
@@ -37,10 +42,12 @@ class ClaudetteContextAddCurrentFileCommand(sublime_plugin.WindowCommand):
         # Hide if file is already in context
         chat_view = self.get_chat_view()
         if chat_view:
-            context_files = chat_view.settings().get('claudette_context_files', {})
+            context_files = chat_view.settings().get(
+                "claudette_context_files", {}
+            )
             file_path = view.file_name()
             for file_info in context_files.values():
-                if file_info['absolute_path'] == file_path:
+                if file_info["absolute_path"] == file_path:
                     return False  # File is already in context
 
         return True
@@ -48,6 +55,7 @@ class ClaudetteContextAddCurrentFileCommand(sublime_plugin.WindowCommand):
     def is_enabled(self):
         """Controls whether the command is greyed out"""
         return self.is_visible()
+
 
 class ClaudetteContextRemoveCurrentFileCommand(sublime_plugin.WindowCommand):
     def run(self):
@@ -65,7 +73,7 @@ class ClaudetteContextRemoveCurrentFileCommand(sublime_plugin.WindowCommand):
             return
 
         # Get current context files
-        context_files = chat_view.settings().get('claudette_context_files', {})
+        context_files = chat_view.settings().get("claudette_context_files", {})
         if not context_files:
             return
 
@@ -73,22 +81,25 @@ class ClaudetteContextRemoveCurrentFileCommand(sublime_plugin.WindowCommand):
         removed = False
         updated_files = {}
         for relative_path, file_info in context_files.items():
-            if file_info['absolute_path'] != file_path:
+            if file_info["absolute_path"] != file_path:
                 updated_files[relative_path] = file_info
             else:
                 removed = True
 
         if removed:
-            chat_view.settings().set('claudette_context_files', updated_files)
-            claudette_chat_status_message(self.window, f"Removed {relative_path} from chat context", "✅")
-            sublime.status_message(f"Removed file from chat context")
+            chat_view.settings().set("claudette_context_files", updated_files)
+            claudette_chat_status_message(
+                self.window, f"Removed {relative_path} from chat context", "✅"
+            )
+            sublime.status_message("Removed file from chat context")
         else:
             sublime.status_message("File not found in chat context")
 
     def get_chat_view(self):
         for view in self.window.views():
-            if (view.settings().get('claudette_is_chat_view', False) and
-                view.settings().get('claudette_is_current_chat', False)):
+            if view.settings().get(
+                "claudette_is_chat_view", False
+            ) and view.settings().get("claudette_is_current_chat", False):
                 return view
         return None
 
@@ -98,7 +109,7 @@ class ClaudetteContextRemoveCurrentFileCommand(sublime_plugin.WindowCommand):
         if not view:
             return False
 
-        if view.settings().get('claudette_is_chat_view', False):
+        if view.settings().get("claudette_is_chat_view", False):
             return False
 
         if not view.file_name():
@@ -109,10 +120,10 @@ class ClaudetteContextRemoveCurrentFileCommand(sublime_plugin.WindowCommand):
         if not chat_view:
             return False
 
-        context_files = chat_view.settings().get('claudette_context_files', {})
+        context_files = chat_view.settings().get("claudette_context_files", {})
         file_path = view.file_name()
         for file_info in context_files.values():
-            if file_info['absolute_path'] == file_path:
+            if file_info["absolute_path"] == file_path:
                 return True
 
         return False

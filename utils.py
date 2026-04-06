@@ -1,21 +1,25 @@
-import sublime
 import os
-from pathlib import Path
 from typing import Optional
+
+import sublime
+
 from .constants import SETTINGS_FILE
 
-def claudette_chat_status_message(window, message: str, prefix: str = "ℹ️", copy_path: Optional[str] = None) -> int:
+
+def claudette_chat_status_message(
+    window, message: str, prefix: str = "ℹ️", copy_path: Optional[str] = None
+) -> int:
     """
     Display a status message in the active chat view.
 
     Args:
         window: The Sublime Text window
-        message (str): The status message to display
-        prefix (str, optional): Icon or text prefix for the message. Defaults to "ℹ️"
-        copy_path (str, optional): If provided, adds a "Copy Path" button that copies this path to clipboard
+        message (str): Status text to display
+        prefix (str, optional): Prefix icon/text (default "ℹ️")
+        copy_path (str, optional): If set, show a Copy Path phantom
 
     Returns:
-        int: The end position of the message in the view, or -1 if no view was found
+        int: End position of the message in the view, or -1 if missing
     """
     if not window:
         return -1
@@ -23,8 +27,9 @@ def claudette_chat_status_message(window, message: str, prefix: str = "ℹ️", 
     # Find the active chat view
     current_chat_view = None
     for view in window.views():
-        if (view.settings().get('claudette_is_chat_view', False) and
-            view.settings().get('claudette_is_current_chat', False)):
+        if view.settings().get(
+            "claudette_is_chat_view", False
+        ) and view.settings().get("claudette_is_current_chat", False):
             current_chat_view = view
             break
 
@@ -33,25 +38,32 @@ def claudette_chat_status_message(window, message: str, prefix: str = "ℹ️", 
 
     if current_chat_view.size() > 0:
         view_size = current_chat_view.size()
-        last_chars = current_chat_view.substr(sublime.Region(max(0, view_size - 2), view_size))
-        if last_chars == '\n\n':
-            # Content already ends with two newlines, don't add any newline before message
+        last_chars = current_chat_view.substr(
+            sublime.Region(max(0, view_size - 2), view_size)
+        )
+        if last_chars == "\n\n":
+            # Two trailing newlines: do not add another before the message
             formatted_message = f"{prefix + ' ' if prefix else ''}{message}"
-        elif last_chars.endswith('\n'):
+        elif last_chars.endswith("\n"):
             # Content ends with one newline, add one more for spacing
             formatted_message = f"\n{prefix + ' ' if prefix else ''}{message}"
         else:
             # Content doesn't end with newline, add two for spacing
-            formatted_message = f"\n\n{prefix + ' ' if prefix else ''}{message}"
+            formatted_message = (
+                f"\n\n{prefix + ' ' if prefix else ''}{message}"
+            )
     else:
         formatted_message = f"{prefix + ' ' if prefix else ''}{message}"
 
     current_chat_view.set_read_only(False)
-    current_chat_view.run_command('append', {
-        'characters': formatted_message,
-        'force': True,
-        'scroll_to_end': True
-    })
+    current_chat_view.run_command(
+        "append",
+        {
+            "characters": formatted_message,
+            "force": True,
+            "scroll_to_end": True,
+        },
+    )
 
     # Add "Copy Path" button as phantom if path is provided
     if copy_path:
@@ -59,11 +71,9 @@ def claudette_chat_status_message(window, message: str, prefix: str = "ℹ️", 
         _add_copy_path_phantom(current_chat_view, button_position, copy_path)
 
     # Add trailing newline
-    current_chat_view.run_command('append', {
-        'characters': '\n',
-        'force': True,
-        'scroll_to_end': True
-    })
+    current_chat_view.run_command(
+        "append", {"characters": "\n", "force": True, "scroll_to_end": True}
+    )
 
     end_point = current_chat_view.size()
 
@@ -105,31 +115,34 @@ def _add_copy_path_phantom(view, position: int, path: str):
     view_id = view.id()
 
     if view_id not in _copy_path_phantom_sets:
-        _copy_path_phantom_sets[view_id] = sublime.PhantomSet(view, f"copy_path_buttons_{view_id}")
+        _copy_path_phantom_sets[view_id] = sublime.PhantomSet(
+            view, f"copy_path_buttons_{view_id}"
+        )
 
     phantom_set = _copy_path_phantom_sets[view_id]
 
     # Escape the path for use in HTML
-    escaped_path = (path
-        .replace('&', '&amp;')
-        .replace('"', '&quot;')
-        .replace('<', '&lt;')
-        .replace('>', '&gt;'))
+    escaped_path = (
+        path.replace("&", "&amp;")
+        .replace('"', "&quot;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
 
-    button_html = f''' <span class="copy-path-button" style="padding-left: 8px"><a href="copy:{escaped_path}">Copy Path</a></span>'''
+    button_html = (
+        ' <span class="copy-path-button" style="padding-left: 8px">'
+        f'<a href="copy:{escaped_path}">Copy Path</a></span>'
+    )
 
     def on_navigate(href):
-        if href.startswith('copy:'):
+        if href.startswith("copy:"):
             path_to_copy = href[5:]
             sublime.set_clipboard(path_to_copy)
-            sublime.status_message(f"File path copied to clipboard")
+            sublime.status_message("File path copied to clipboard")
 
     region = sublime.Region(position, position)
     phantom = sublime.Phantom(
-        region,
-        button_html,
-        sublime.LAYOUT_INLINE,
-        on_navigate
+        region, button_html, sublime.LAYOUT_INLINE, on_navigate
     )
 
     # Get existing phantoms and add the new one
@@ -137,9 +150,11 @@ def _add_copy_path_phantom(view, position: int, path: str):
     existing_phantoms.append(phantom)
     phantom_set.update(existing_phantoms)
 
+
 def claudette_estimate_api_tokens(text):
-    """Estimate Claude API tokens based on character count (rough approximation)."""
+    """Rough token estimate from character count (chars / 4)."""
     return len(text) // 4
+
 
 def claudette_detect_encoding(sample):
     """
@@ -147,25 +162,28 @@ def claudette_detect_encoding(sample):
     Similar to how Sublime Text handles encodings.
     """
     # Check for BOMs
-    if sample.startswith(b'\xEF\xBB\xBF'):
-        return 'utf-8-sig'
-    elif sample.startswith(b'\xFE\xFF'):
-        return 'utf-16be'
-    elif sample.startswith(b'\xFF\xFE'):
-        return 'utf-16le'
-    elif sample.startswith(b'\x00\x00\xFE\xFF'):
-        return 'utf-32be'
-    elif sample.startswith(b'\xFF\xFE\x00\x00'):
-        return 'utf-32le'
+    if sample.startswith(b"\xef\xbb\xbf"):
+        return "utf-8-sig"
+    elif sample.startswith(b"\xfe\xff"):
+        return "utf-16be"
+    elif sample.startswith(b"\xff\xfe"):
+        return "utf-16le"
+    elif sample.startswith(b"\x00\x00\xfe\xff"):
+        return "utf-32be"
+    elif sample.startswith(b"\xff\xfe\x00\x00"):
+        return "utf-32le"
 
     # Try UTF-8
     try:
-        sample.decode('utf-8')
-        return 'utf-8'
+        sample.decode("utf-8")
+        return "utf-8"
     except UnicodeDecodeError:
-        return 'latin-1'  # Fallback encoding
+        return "latin-1"  # Fallback encoding
 
-def claudette_is_text_file(file_path, sample_size=4096, max_size=1024*1024*10):
+
+def claudette_is_text_file(
+    file_path, sample_size=4096, max_size=1024 * 1024 * 10
+):
     """
     More complete implementation of Sublime Text's text file detection.
 
@@ -186,14 +204,14 @@ def claudette_is_text_file(file_path, sample_size=4096, max_size=1024*1024*10):
 
         # Empty file check
         if file_size == 0:
-            return True, 'utf-8', "Empty file"
+            return True, "utf-8", "Empty file"
 
-        with open(file_path, 'rb') as f:
+        with open(file_path, "rb") as f:
             sample = f.read(min(sample_size, file_size))
 
         # Binary check
-        if b'\x00' in sample:
-            null_percentage = sample.count(b'\x00') / len(sample)
+        if b"\x00" in sample:
+            null_percentage = sample.count(b"\x00") / len(sample)
             if null_percentage > 0.01:  # More than 1% nulls
                 return False, None, "Binary file (contains NULL bytes)"
 
@@ -202,7 +220,7 @@ def claudette_is_text_file(file_path, sample_size=4096, max_size=1024*1024*10):
 
         # Verification check
         try:
-            with open(file_path, 'r', encoding=encoding) as f:
+            with open(file_path, "r", encoding=encoding) as f:
                 f.read(sample_size)
             return True, encoding, "Valid text file"
         except UnicodeDecodeError:
@@ -211,38 +229,43 @@ def claudette_is_text_file(file_path, sample_size=4096, max_size=1024*1024*10):
     except IOError as e:
         return False, None, f"IO Error: {str(e)}"
 
+
 def claudette_get_api_key():
     """
     Get the currently active API key.
 
     Returns:
-        dict or None: The active API key as a dictionary with 'key' and 'name' fields,
-                      or None if no valid key is available
+        dict or None: Active key dict with 'key' and 'name', else None
     """
     settings = sublime.load_settings(SETTINGS_FILE)
-    api_key = settings.get('api_key')
+    api_key = settings.get("api_key")
 
     # For string API key, return a dict format
     if isinstance(api_key, str) and api_key.strip():
-        return {'key': api_key, 'name': 'Default'}
+        return {"key": api_key, "name": "Default"}
 
     # For dict with multiple keys, get the current one
-    elif isinstance(api_key, dict) and api_key.get('keys') and isinstance(api_key['keys'], list):
-        keys = api_key['keys']
-        current_index = api_key.get('active_key', 0)
+    elif (
+        isinstance(api_key, dict)
+        and api_key.get("keys")
+        and isinstance(api_key["keys"], list)
+    ):
+        keys = api_key["keys"]
+        current_index = api_key.get("active_key", 0)
 
         # If there's a valid current index, return that key
         if isinstance(current_index, int) and 0 <= current_index < len(keys):
             key_entry = keys[current_index]
-            if isinstance(key_entry, dict) and key_entry.get('key'):
+            if isinstance(key_entry, dict) and key_entry.get("key"):
                 return key_entry
 
         # Otherwise return the first valid key
         for key_entry in keys:
-            if isinstance(key_entry, dict) and key_entry.get('key'):
+            if isinstance(key_entry, dict) and key_entry.get("key"):
                 return key_entry
 
     return None
+
 
 def claudette_get_api_key_value():
     """
@@ -254,9 +277,10 @@ def claudette_get_api_key_value():
     api_key = claudette_get_api_key()
 
     if isinstance(api_key, dict):
-        return api_key.get('key', '')
+        return api_key.get("key", "")
 
-    return ''
+    return ""
+
 
 def claudette_get_api_key_name():
     """
@@ -268,6 +292,6 @@ def claudette_get_api_key_name():
     api_key = claudette_get_api_key()
 
     if isinstance(api_key, dict):
-        return api_key.get('name', 'Default')
+        return api_key.get("name", "Default")
 
-    return 'Undefined'
+    return "Undefined"

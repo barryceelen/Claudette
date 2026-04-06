@@ -4,19 +4,25 @@
 def _default_session_stats():
     """Return a fresh default session stats dict."""
     return {
-        'input_tokens': 0,
-        'output_tokens': 0,
-        'cost': 0.0,
-        'web_search_requests': 0
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cost": 0.0,
+        "web_search_requests": 0,
     }
 
 
-def calculate_cost(pricing, model, input_tokens, output_tokens,
-                   cache_read_tokens=0, cache_write_tokens=0):
+def calculate_cost(
+    pricing,
+    model,
+    input_tokens,
+    output_tokens,
+    cache_read_tokens=0,
+    cache_write_tokens=0,
+):
     """Calculate cost based on token usage and model.
 
     Args:
-        pricing: The pricing dict from settings (tier_name -> {input, output, ...}).
+        pricing: Pricing dict from settings (tier_name -> input/output/etc.).
         model: Model name string.
         input_tokens: Number of input tokens.
         output_tokens: Number of output tokens.
@@ -40,15 +46,23 @@ def calculate_cost(pricing, model, input_tokens, output_tokens,
     if not price_tier:
         return 0
 
-    input_cost = ((input_tokens - cache_read_tokens) / 1000) * price_tier['input']
-    output_cost = (output_tokens / 1000) * price_tier['output']
-    cache_write_cost = (cache_write_tokens / 1000) * price_tier.get('cache_write', 0)
-    cache_read_cost = (cache_read_tokens / 1000) * price_tier.get('cache_read', 0)
+    input_cost = ((input_tokens - cache_read_tokens) / 1000) * price_tier[
+        "input"
+    ]
+    output_cost = (output_tokens / 1000) * price_tier["output"]
+    cache_write_cost = (cache_write_tokens / 1000) * price_tier.get(
+        "cache_write", 0
+    )
+    cache_read_cost = (cache_read_tokens / 1000) * price_tier.get(
+        "cache_read", 0
+    )
 
     return input_cost + output_cost + cache_write_cost + cache_read_cost
 
 
-def update_session_stats(view, input_tokens, output_tokens, cost, web_search_requests=0):
+def update_session_stats(
+    view, input_tokens, output_tokens, cost, web_search_requests=0
+):
     """Update the session stats stored on a view's settings.
 
     Reads the current 'claudette_session_stats' from the view, adds the new
@@ -64,25 +78,29 @@ def update_session_stats(view, input_tokens, output_tokens, cost, web_search_req
     Returns:
         dict: The updated session stats, or None if view has no settings.
     """
-    if not view or not hasattr(view, 'settings'):
+    if not view or not hasattr(view, "settings"):
         return None
 
     settings = view.settings()
-    sess = settings.get('claudette_session_stats', _default_session_stats())
+    sess = settings.get("claudette_session_stats", _default_session_stats())
 
-    if 'web_search_requests' not in sess:
-        sess['web_search_requests'] = 0
+    if "web_search_requests" not in sess:
+        sess["web_search_requests"] = 0
 
-    sess['input_tokens'] = sess.get('input_tokens', 0) + input_tokens
-    sess['output_tokens'] = sess.get('output_tokens', 0) + output_tokens
-    sess['cost'] = sess.get('cost', 0.0) + cost
-    sess['web_search_requests'] = sess.get('web_search_requests', 0) + web_search_requests
+    sess["input_tokens"] = sess.get("input_tokens", 0) + input_tokens
+    sess["output_tokens"] = sess.get("output_tokens", 0) + output_tokens
+    sess["cost"] = sess.get("cost", 0.0) + cost
+    sess["web_search_requests"] = (
+        sess.get("web_search_requests", 0) + web_search_requests
+    )
 
-    settings.set('claudette_session_stats', sess)
+    settings.set("claudette_session_stats", sess)
     return sess
 
 
-def format_status_message(input_tokens, output_tokens, cache_info, current_cost, session_cost):
+def format_status_message(
+    input_tokens, output_tokens, cache_info, current_cost, session_cost
+):
     """Format a status bar message with token and cost information.
 
     Args:

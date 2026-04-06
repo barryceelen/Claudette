@@ -1,33 +1,36 @@
-import sublime
-import sublime_plugin
 import os
 from pathlib import Path
-from .file_handler import ClaudetteFileHandler
-from ..utils import claudette_chat_status_message
+from typing import List, Set
+
+import sublime
+import sublime_plugin
+
 from ..chat.chat_view import ClaudetteChatView
 from ..constants import SETTINGS_FILE
-from typing import List, Set
+from ..utils import claudette_chat_status_message
+from .file_handler import ClaudetteFileHandler
+
 
 class ClaudetteGitignoreParser:
     def __init__(self, root_path: str):
         self.root_path = Path(root_path)
         self.ignore_patterns: Set[str] = {
-            '.git/',           # Always ignore .git directory
-            '.gitignore',      # Always ignore .gitignore files
-            '.git',            # For when .git is referenced without trailing slash
+            ".git/",  # Always ignore .git directory
+            ".gitignore",  # Always ignore .gitignore files
+            ".git",  # For when .git is referenced without trailing slash
         }
         self.load_gitignore()
 
     def load_gitignore(self):
-        """Load .gitignore patterns from the root directory and parent directories."""
+        """Load .gitignore patterns from this root and parents."""
         current_dir = self.root_path
         while current_dir.parent != current_dir:  # Stop at root directory
-            gitignore_path = current_dir / '.gitignore'
+            gitignore_path = current_dir / ".gitignore"
             if gitignore_path.is_file():
-                with open(gitignore_path, 'r') as f:
+                with open(gitignore_path, "r") as f:
                     for line in f:
                         line = line.strip()
-                        if line and not line.startswith('#'):
+                        if line and not line.startswith("#"):
                             self.ignore_patterns.add(line)
             current_dir = current_dir.parent
 
@@ -37,49 +40,59 @@ class ClaudetteGitignoreParser:
 
         Args:
             path: The path to check
-            allow_git_files: If True, git-related files won't be automatically ignored
+            allow_git_files: If True, do not auto-ignore git-related files
         """
         try:
             rel_path = str(Path(path).relative_to(self.root_path))
 
             # Check if path contains .git directory
-            if not allow_git_files and '.git' in Path(rel_path).parts:
+            if not allow_git_files and ".git" in Path(rel_path).parts:
                 return True
 
             for pattern in self.ignore_patterns:
                 # Skip git-related patterns if allowing git files
-                if allow_git_files and pattern in {'.git/', '.gitignore', '.git'}:
+                if allow_git_files and pattern in {
+                    ".git/",
+                    ".gitignore",
+                    ".git",
+                }:
                     continue
 
                 # Handle patterns with leading slash
-                if pattern.startswith('/'):
+                if pattern.startswith("/"):
                     # Remove leading slash and compare from root
                     clean_pattern = pattern[1:]
-                    if rel_path == clean_pattern or rel_path.startswith(f"{clean_pattern}/"):
+                    if rel_path == clean_pattern or rel_path.startswith(
+                        f"{clean_pattern}/"
+                    ):
                         return True
                     continue
 
                 # Handle directory patterns
-                if pattern.endswith('/'):
-                    if any(part == pattern[:-1] for part in Path(rel_path).parts):
+                if pattern.endswith("/"):
+                    if any(
+                        part == pattern[:-1] for part in Path(rel_path).parts
+                    ):
                         return True
                     continue
 
                 # Handle wildcards
-                if '*' in pattern:
+                if "*" in pattern:
                     import fnmatch
+
                     if fnmatch.fnmatch(rel_path, pattern):
                         return True
                     # Also check with leading slash for root-level matches
-                    if fnmatch.fnmatch('/' + rel_path, pattern):
+                    if fnmatch.fnmatch("/" + rel_path, pattern):
                         return True
                     continue
 
                 # Handle exact matches (both with and without leading slash)
-                if (rel_path == pattern or
-                    rel_path.startswith(f"{pattern}/") or
-                    rel_path == pattern.lstrip('/') or
-                    rel_path.startswith(f"{pattern.lstrip('/')}/")
+                if (
+                    rel_path == pattern
+                    or rel_path.startswith(f"{pattern}/")
+                    or rel_path == pattern.lstrip("/")
+                    or rel_path.startswith(f"{pattern.lstrip('/')}/")
                 ):
                     return True
 
@@ -87,6 +100,7 @@ class ClaudetteGitignoreParser:
         except ValueError:
             # Handle case where path is not relative to root_path
             return False
+
 
 class ClaudetteContextAddFilesCommand(sublime_plugin.WindowCommand):
     def run(self, paths=None):
@@ -103,7 +117,9 @@ class ClaudetteContextAddFilesCommand(sublime_plugin.WindowCommand):
             created_new_view = True
 
         file_handler = ClaudetteFileHandler()
-        file_handler.files = chat_view.settings().get('claudette_context_files', {})
+        file_handler.files = chat_view.settings().get(
+            "claudette_context_files", {}
+        )
 
         if isinstance(paths, str):
             paths = [paths]
@@ -120,13 +136,15 @@ class ClaudetteContextAddFilesCommand(sublime_plugin.WindowCommand):
 
                 for root, dirs, files in os.walk(path):
                     # Skip .git directories
-                    if '.git' in dirs:
-                        dirs.remove('.git')
+                    if ".git" in dirs:
+                        dirs.remove(".git")
                         ignored_count += 1
 
                     for file in files:
                         full_path = os.path.join(root, file)
-                        if gitignore.should_ignore(full_path, allow_git_files=False):
+                        if gitignore.should_ignore(
+                            full_path, allow_git_files=False
+                        ):
                             ignored_count += 1
                             continue
                         expanded_paths.append(full_path)
@@ -143,7 +161,7 @@ class ClaudetteContextAddFilesCommand(sublime_plugin.WindowCommand):
 
         result = file_handler.process_paths(expanded_paths)
 
-        chat_view.settings().set('claudette_context_files', result['files'])
+        chat_view.settings().set("claudette_context_files", result["files"])
 
         # Build message with actual file/directory names
         message_parts = []
@@ -162,25 +180,29 @@ class ClaudetteContextAddFilesCommand(sublime_plugin.WindowCommand):
 
         message = f"Added {' and '.join(message_parts)}"
 
-        if result['skipped_files'] > 0:
+        if result["skipped_files"] > 0:
             message += f", skipped {result['skipped_files']} files"
         if ignored_count > 0:
             message += f", ignored {ignored_count} files"
 
-        # Determine the path to offer for copying
-        # For single file/directory, use its path; for multiple, use the first one
+        # Path for copy button: single selection uses it; multi uses None
         copy_path = paths[0] if len(paths) == 1 else None
 
-        claudette_chat_status_message(self.window, message, "✅", copy_path=copy_path)
+        claudette_chat_status_message(
+            self.window, message, "✅", copy_path=copy_path
+        )
         sublime.status_message(message)
 
         if created_new_view:
-            sublime.set_timeout(lambda: self.window.run_command('claudette_ask_question'), 100)
+            sublime.set_timeout(
+                lambda: self.window.run_command("claudette_ask_question"), 100
+            )
 
     def get_chat_view(self):
         for view in self.window.views():
-            if (view.settings().get('claudette_is_chat_view', False) and
-                view.settings().get('claudette_is_current_chat', False)):
+            if view.settings().get(
+                "claudette_is_chat_view", False
+            ) and view.settings().get("claudette_is_current_chat", False):
                 return view
         return None
 
@@ -188,7 +210,9 @@ class ClaudetteContextAddFilesCommand(sublime_plugin.WindowCommand):
         """Create a new chat view and return it."""
         try:
             settings = sublime.load_settings(SETTINGS_FILE)
-            chat_view_manager = ClaudetteChatView.get_instance(self.window, settings)
+            chat_view_manager = ClaudetteChatView.get_instance(
+                self.window, settings
+            )
             view = chat_view_manager.create_or_get_view()
             return view
         except Exception as e:
@@ -205,8 +229,9 @@ class ClaudetteContextAddFilesCommand(sublime_plugin.WindowCommand):
 
     def description(self, paths=None):
         """
-        Dynamically returns the menu caption based on the selected paths.
-        This method is called by Sublime Text to determine the menu item caption.
+        Return the context menu caption for the selected paths.
+
+        Sublime Text calls this to build the menu item label.
         """
         # Check if a chat view exists
         chat_view_exists = self.get_chat_view() is not None

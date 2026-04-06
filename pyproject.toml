@@ -1,0 +1,10 @@
+[tool.ruff]
+line-length = 79
+
+[tool.ruff.lint]
+# PEP 8 style; extend with common quality rules
+select = ["E", "W", "F", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+# Banner lines; side-effect imports (command registration) look unused to F401
+"Claudette.py" = ["E501", "F401"]

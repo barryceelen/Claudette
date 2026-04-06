@@ -1,6 +1,9 @@
-import sublime
 import time
+
+import sublime
+
 from ..constants import SPINNER_CHARS, SPINNER_INTERVAL_MS
+
 
 class ClaudetteSpinner:
     def __init__(self):
@@ -21,8 +24,8 @@ class ClaudetteSpinner:
         Start the spinner with a given message.
 
         Args:
-            message (str): The message to display with the spinner
-            duration (int, optional): Duration in milliseconds after which the spinner should stop
+            message (str): Message shown with the spinner
+            duration (int, optional): Stop after this many milliseconds
         """
         self.message = message
         self.active = True
@@ -52,7 +55,9 @@ class ClaudetteSpinner:
             return
 
         if self.duration is not None and self.start_time is not None:
-            elapsed_time = (time.time() - self.start_time) * 1000 # Convert to milliseconds
+            elapsed_time = (
+                time.time() - self.start_time
+            ) * 1000  # Convert to milliseconds
             if elapsed_time >= self.duration:
                 self.stop()
                 return
@@ -63,4 +68,6 @@ class ClaudetteSpinner:
 
         sublime.set_timeout_async(lambda: sublime.status_message(status), 0)
 
-        self.timer = sublime.set_timeout_async(self.update_spinner, SPINNER_INTERVAL_MS)
+        self.timer = sublime.set_timeout_async(
+            self.update_spinner, SPINNER_INTERVAL_MS
+        )

@@ -1,19 +1,20 @@
 """
 Text editor tool executor for Anthropic's text editor tool.
 
-Resolves paths against allowed roots (e.g. project folders), runs view/str_replace/create/insert
-and returns results for tool_result blocks.
+Resolves paths against allowed roots (e.g. project folders), runs
+view/str_replace/create/insert, and returns tool_result payloads.
 """
 
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
+
 def get_allowed_roots(window, settings) -> List[str]:
     """
     Return list of allowed filesystem roots for the text editor tool.
 
-    Uses window.folders() (project folders), then text_editor_tool_roots setting,
-    then fallback to current file's directory or user home.
+    Uses window.folders(), then text_editor_tool_roots, then the active
+    file's directory or the user home.
     """
     roots = []
 
@@ -22,7 +23,7 @@ def get_allowed_roots(window, settings) -> List[str]:
         if folders:
             roots.extend(os.path.normpath(str(f)) for f in folders)
 
-    extra = settings.get('text_editor_tool_roots') if settings else None
+    extra = settings.get("text_editor_tool_roots") if settings else None
     if extra and isinstance(extra, list):
         for path in extra:
             if path and isinstance(path, str):
@@ -36,14 +37,19 @@ def get_allowed_roots(window, settings) -> List[str]:
             roots.append(os.path.dirname(view.file_name()))
 
     if not roots:
-        roots.append(os.path.expanduser('~'))
+        roots.append(os.path.expanduser("~"))
 
     return roots
 
-def _find_in_context_files(path: str, context_files: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+
+def _find_in_context_files(
+    path: str, context_files: Dict[str, Any]
+) -> Tuple[Optional[str], Optional[str]]:
     """
-    Check if path matches a filename in context_files.
-    Returns (absolute_path, None) if exactly one match, (None, error_message) if multiple matches, (None, None) if none.
+    Match path against filenames in context_files.
+
+    Returns (abs_path, None) for one match, (None, err) for several, else
+    (None, None).
     """
     if not context_files or not path:
         return None, None
@@ -53,7 +59,7 @@ def _find_in_context_files(path: str, context_files: Dict[str, Any]) -> Tuple[Op
         if isinstance(file_info, dict):
             context_filename = os.path.basename(rel_path)
             if context_filename == filename:
-                abs_path = file_info.get('absolute_path')
+                abs_path = file_info.get("absolute_path")
                 if abs_path and os.path.isfile(abs_path):
                     matches.append(abs_path)
     if len(matches) == 0:
@@ -62,7 +68,9 @@ def _find_in_context_files(path: str, context_files: Dict[str, Any]) -> Tuple[Op
         paths_list = "\n".join(f"  - {p}" for p in matches)
         return None, (
             "Error: Multiple files named '{0}' found in chat context. "
-            "Please specify the full path. Found:\n{1}".format(filename, paths_list)
+            "Please specify the full path. Found:\n{1}".format(
+                filename, paths_list
+            )
         )
     return matches[0], None
 
@@ -101,13 +109,13 @@ def resolve_path(
     window=None,
 ) -> Tuple[Optional[str], Optional[str]]:
     """
-    Resolve a path (relative or absolute) to an absolute path under an allowed root.
+    Resolve a path to an absolute path under an allowed root.
 
-    First checks context files and open views if path is just a filename (no directory).
-    Then falls back to normal resolution against allowed roots.
+    For bare filenames, checks context files and open views first, then
+    resolves against allowed_roots.
 
-    Returns (resolved_absolute_path, None) on success, or (None, error_message) on failure.
-    Rejects path traversal and paths outside allowed roots.
+    Returns (absolute_path, None) on success, (None, err) on failure.
+    Rejects traversal and paths outside allowed roots.
     """
     if not path or not isinstance(path, str):
         return None, "Error: Invalid path."
@@ -118,7 +126,11 @@ def resolve_path(
 
     normalized = os.path.normpath(path)
 
-    if normalized.startswith('..') or '/..' in normalized or '\\..' in normalized:
+    if (
+        normalized.startswith("..")
+        or "/.." in normalized
+        or "\\.." in normalized
+    ):
         return None, "Error: Path traversal is not allowed."
 
     # If path is just a filename (no directory), check with priority:
@@ -126,7 +138,7 @@ def resolve_path(
     # 2. Context files (single match only - error if multiple)
     # 3. Other open views
     # 4. Project folders (normal resolution below)
-    if os.path.dirname(normalized) == '' or os.path.dirname(normalized) == '.':
+    if os.path.dirname(normalized) == "" or os.path.dirname(normalized) == ".":
         # Priority 1: Active view
         if window:
             found, is_active = _find_in_open_views(normalized, window)
@@ -150,7 +162,7 @@ def resolve_path(
                 if ensure_under_root(found, allowed_roots):
                     return found, None
 
-    # Normal resolution: absolute paths or relative paths against allowed roots.
+    # Normal: absolute paths or paths relative to allowed roots.
     if os.path.isabs(normalized):
         for root in allowed_roots:
             try:
@@ -195,7 +207,9 @@ def execute_view(
 
     Returns (content_string, is_error).
     """
-    resolved, err = resolve_path(path, allowed_roots, context_files=context_files, window=window)
+    resolved, err = resolve_path(
+        path, allowed_roots, context_files=context_files, window=window
+    )
     if err:
         return err, True
 
@@ -205,7 +219,9 @@ def execute_view(
     if os.path.isdir(resolved):
         try:
             names = sorted(os.listdir(resolved))
-            lines = ["{0}: {1}".format(i + 1, name) for i, name in enumerate(names)]
+            lines = [
+                "{0}: {1}".format(i + 1, name) for i, name in enumerate(names)
+            ]
             return "\n".join(lines), False
         except OSError as e:
             return "Error: Could not list directory: {0}".format(str(e)), True
@@ -214,13 +230,15 @@ def execute_view(
         return "Error: File not found", True
 
     try:
-        with open(resolved, 'r', encoding='utf-8', errors='replace') as f:
+        with open(resolved, "r", encoding="utf-8", errors="replace") as f:
             content = f.read()
     except OSError as e:
         return "Error: Could not read file: {0}".format(str(e)), True
 
     if view_range and isinstance(view_range, list) and len(view_range) >= 2:
-        start_line = max(1, int(view_range[0]) if view_range[0] is not None else 1)
+        start_line = max(
+            1, int(view_range[0]) if view_range[0] is not None else 1
+        )
         end_line = view_range[1]
         lines = content.splitlines()
         total = len(lines)
@@ -232,13 +250,21 @@ def execute_view(
             return "Error: Invalid view_range", True
         content = "\n".join(
             "{0}: {1}".format(i, line)
-            for i, line in enumerate(lines[start_line - 1:end_line], start=start_line)
+            for i, line in enumerate(
+                lines[start_line - 1 : end_line], start=start_line
+            )
         )
     else:
         lines = content.splitlines()
-        content = "\n".join("{0}: {1}".format(i, line) for i, line in enumerate(lines, start=1))
+        content = "\n".join(
+            "{0}: {1}".format(i, line) for i, line in enumerate(lines, start=1)
+        )
 
-    if max_characters is not None and max_characters > 0 and len(content) > max_characters:
+    if (
+        max_characters is not None
+        and max_characters > 0
+        and len(content) > max_characters
+    ):
         content = content[:max_characters] + "\n... (truncated)"
 
     return content, False
@@ -257,7 +283,9 @@ def execute_str_replace(
 
     Returns (result_message, is_error).
     """
-    resolved, err = resolve_path(path, allowed_roots, context_files=context_files, window=window)
+    resolved, err = resolve_path(
+        path, allowed_roots, context_files=context_files, window=window
+    )
     if err:
         return err, True
 
@@ -271,26 +299,35 @@ def execute_str_replace(
         return "Error: Path is outside allowed project roots.", True
 
     try:
-        with open(resolved, 'r', encoding='utf-8') as f:
+        with open(resolved, "r", encoding="utf-8") as f:
             content = f.read()
     except OSError as e:
         return "Error: Could not read file: {0}".format(str(e)), True
 
     count = content.count(old_str)
     if count == 0:
-        return "Error: No match found for replacement. Please check your text and try again.", True
+        return (
+            "Error: No match found for replacement. "
+            "Please check your text and try again.",
+            True,
+        )
     if count > 1:
         return (
-            "Error: Found {0} matches for replacement text. Please provide more context to make a unique match.".format(count),
+            "Error: Found {0} matches for replacement text. "
+            "Please provide more context to make a unique match.".format(
+                count
+            ),
             True,
         )
 
     new_content = content.replace(old_str, new_str, 1)
     try:
-        with open(resolved, 'w', encoding='utf-8') as f:
+        with open(resolved, "w", encoding="utf-8") as f:
             f.write(new_content)
     except OSError as e:
-        return "Error: Permission denied. Cannot write to file. {0}".format(str(e)), True
+        return "Error: Permission denied. Cannot write to file. {0}".format(
+            str(e)
+        ), True
 
     return "Successfully replaced text at exactly one location.", False
 
@@ -307,7 +344,9 @@ def execute_create(
 
     Returns (result_message, is_error).
     """
-    resolved, err = resolve_path(path, allowed_roots, context_files=context_files, window=window)
+    resolved, err = resolve_path(
+        path, allowed_roots, context_files=context_files, window=window
+    )
     if err:
         return err, True
 
@@ -322,16 +361,20 @@ def execute_create(
         try:
             os.makedirs(parent, exist_ok=True)
         except OSError as e:
-            return "Error: Could not create directory: {0}".format(str(e)), True
+            return "Error: Could not create directory: {0}".format(
+                str(e)
+            ), True
 
     if not ensure_under_root(resolved, allowed_roots):
         return "Error: Path is outside allowed project roots.", True
 
     try:
-        with open(resolved, 'w', encoding='utf-8') as f:
+        with open(resolved, "w", encoding="utf-8") as f:
             f.write(file_text)
     except OSError as e:
-        return "Error: Permission denied. Cannot write to file. {0}".format(str(e)), True
+        return "Error: Permission denied. Cannot write to file. {0}".format(
+            str(e)
+        ), True
 
     return "Successfully created file.", False
 
@@ -349,7 +392,9 @@ def execute_insert(
 
     Returns (result_message, is_error).
     """
-    resolved, err = resolve_path(path, allowed_roots, context_files=context_files, window=window)
+    resolved, err = resolve_path(
+        path, allowed_roots, context_files=context_files, window=window
+    )
     if err:
         return err, True
 
@@ -363,7 +408,7 @@ def execute_insert(
         return "Error: Path is outside allowed project roots.", True
 
     try:
-        with open(resolved, 'r', encoding='utf-8') as f:
+        with open(resolved, "r", encoding="utf-8") as f:
             lines = f.readlines()
     except OSError as e:
         return "Error: Could not read file: {0}".format(str(e)), True
@@ -373,17 +418,28 @@ def execute_insert(
         insert_line = len(lines)
 
     if insert_line == 0:
-        new_content = insert_text + ("\n" if lines and not lines[0].endswith("\n") else "") + "".join(lines)
+        new_content = (
+            insert_text
+            + ("\n" if lines and not lines[0].endswith("\n") else "")
+            + "".join(lines)
+        )
     else:
         before = lines[:insert_line]
         after = lines[insert_line:]
-        new_content = "".join(before) + insert_text + ("\n" if after and not insert_text.endswith("\n") else "") + "".join(after)
+        new_content = (
+            "".join(before)
+            + insert_text
+            + ("\n" if after and not insert_text.endswith("\n") else "")
+            + "".join(after)
+        )
 
     try:
-        with open(resolved, 'w', encoding='utf-8') as f:
+        with open(resolved, "w", encoding="utf-8") as f:
             f.write(new_content)
     except OSError as e:
-        return "Error: Permission denied. Cannot write to file. {0}".format(str(e)), True
+        return "Error: Permission denied. Cannot write to file. {0}".format(
+            str(e)
+        ), True
 
     return "Successfully inserted text.", False
 
@@ -400,24 +456,25 @@ def run_text_editor_tool(
     """
     Execute a single text editor tool call and return a tool_result block.
 
-    input_params must contain command, path, and any command-specific fields.
-    Returns a dict suitable for inclusion in API user message content:
-    {"type": "tool_result", "tool_use_id": ..., "content": ..., "is_error": ...}
+    input_params must contain command, path, and command-specific fields.
+
+    Returns a dict for API user content, e.g. type tool_result with
+    tool_use_id, content, and is_error.
     """
     allowed_roots = get_allowed_roots(window, settings)
-    command = (input_params or {}).get('command', '')
-    path = (input_params or {}).get('path', '')
+    command = (input_params or {}).get("command", "")
+    path = (input_params or {}).get("path", "")
 
     if not command:
         return {
-            'type': 'tool_result',
-            'tool_use_id': tool_use_id,
-            'content': 'Error: Missing command.',
-            'is_error': True,
+            "type": "tool_result",
+            "tool_use_id": tool_use_id,
+            "content": "Error: Missing command.",
+            "is_error": True,
         }
 
-    if command == 'view':
-        view_range = input_params.get('view_range')
+    if command == "view":
+        view_range = input_params.get("view_range")
         content, is_error = execute_view(
             path,
             allowed_roots,
@@ -427,56 +484,67 @@ def run_text_editor_tool(
             window=window,
         )
         return {
-            'type': 'tool_result',
-            'tool_use_id': tool_use_id,
-            'content': content,
-            'is_error': is_error,
+            "type": "tool_result",
+            "tool_use_id": tool_use_id,
+            "content": content,
+            "is_error": is_error,
         }
 
-    if command == 'str_replace':
-        old_str = input_params.get('old_str', '')
-        new_str = input_params.get('new_str', '')
+    if command == "str_replace":
+        old_str = input_params.get("old_str", "")
+        new_str = input_params.get("new_str", "")
         content, is_error = execute_str_replace(
-            path, old_str, new_str, allowed_roots,
-            context_files=context_files, window=window
+            path,
+            old_str,
+            new_str,
+            allowed_roots,
+            context_files=context_files,
+            window=window,
         )
         return {
-            'type': 'tool_result',
-            'tool_use_id': tool_use_id,
-            'content': content,
-            'is_error': is_error,
+            "type": "tool_result",
+            "tool_use_id": tool_use_id,
+            "content": content,
+            "is_error": is_error,
         }
 
-    if command == 'create':
-        file_text = input_params.get('file_text', '')
+    if command == "create":
+        file_text = input_params.get("file_text", "")
         content, is_error = execute_create(
-            path, file_text, allowed_roots,
-            context_files=context_files, window=window
+            path,
+            file_text,
+            allowed_roots,
+            context_files=context_files,
+            window=window,
         )
         return {
-            'type': 'tool_result',
-            'tool_use_id': tool_use_id,
-            'content': content,
-            'is_error': is_error,
+            "type": "tool_result",
+            "tool_use_id": tool_use_id,
+            "content": content,
+            "is_error": is_error,
         }
 
-    if command == 'insert':
-        insert_line = input_params.get('insert_line', 0)
-        insert_text = input_params.get('insert_text', '')
+    if command == "insert":
+        insert_line = input_params.get("insert_line", 0)
+        insert_text = input_params.get("insert_text", "")
         content, is_error = execute_insert(
-            path, insert_line, insert_text, allowed_roots,
-            context_files=context_files, window=window
+            path,
+            insert_line,
+            insert_text,
+            allowed_roots,
+            context_files=context_files,
+            window=window,
         )
         return {
-            'type': 'tool_result',
-            'tool_use_id': tool_use_id,
-            'content': content,
-            'is_error': is_error,
+            "type": "tool_result",
+            "tool_use_id": tool_use_id,
+            "content": content,
+            "is_error": is_error,
         }
 
     return {
-        'type': 'tool_result',
-        'tool_use_id': tool_use_id,
-        'content': "Error: Unknown command '{0}'.".format(command),
-        'is_error': True,
+        "type": "tool_result",
+        "tool_use_id": tool_use_id,
+        "content": "Error: Unknown command '{0}'.".format(command),
+        "is_error": True,
     }

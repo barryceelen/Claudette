@@ -1,19 +1,24 @@
 import json
+import re
+from dataclasses import dataclass
+from typing import List, Set
+
 import sublime
 import sublime_plugin
-import re
-from typing import List, Set
-from dataclasses import dataclass
+
 from ..constants import PLUGIN_NAME, SPINNER_CHARS, SPINNER_INTERVAL_MS
 from ..utils import claudette_cleanup_copy_path_phantoms_for_view
+
 
 @dataclass
 class ClaudetteCodeBlock:
     """Represents a code block found in the chat content."""
+
     content: str
     start_pos: int
     end_pos: int
     language: str
+
 
 class ClaudetteChatViewListener(sublime_plugin.ViewEventListener):
     """Event listener specifically for chat views."""
@@ -21,7 +26,7 @@ class ClaudetteChatViewListener(sublime_plugin.ViewEventListener):
     @classmethod
     def is_applicable(cls, settings):
         """Only attach this listener to chat views."""
-        return settings.get('claudette_is_chat_view', False)
+        return settings.get("claudette_is_chat_view", False)
 
     def on_text_command(self, command_name, args):
         """Handle enter key."""
@@ -29,8 +34,8 @@ class ClaudetteChatViewListener(sublime_plugin.ViewEventListener):
             try:
                 window = self.view.window()
                 if window:
-                    window.run_command('claudette_ask_question')
-                    return ('noop', None)
+                    window.run_command("claudette_ask_question")
+                    return ("noop", None)
             except Exception as e:
                 sublime.status_message(f"Claudette error: {str(e)}")
         return None
@@ -38,6 +43,7 @@ class ClaudetteChatViewListener(sublime_plugin.ViewEventListener):
     def on_close(self):
         ClaudetteChatView.cleanup_for_closed_view(self.view)
         claudette_cleanup_copy_path_phantoms_for_view(self.view)
+
 
 class ClaudetteChatView:
     """Manages chat views for the Claudette plugin."""
@@ -87,7 +93,7 @@ class ClaudetteChatView:
     @classmethod
     def cleanup_for_closed_view(cls, view):
         """Release per-view resources when a chat view is closed."""
-        if not view.settings().get('claudette_is_chat_view', False):
+        if not view.settings().get("claudette_is_chat_view", False):
             return
         view_id = view.id()
         window = view.window()
@@ -98,19 +104,22 @@ class ClaudetteChatView:
             mgr = cls._instances[wid]
             mgr._clear_view_resources(view_id)
             chat_views = [
-                v for v in window.views()
-                if v.settings().get('claudette_is_chat_view', False)
+                v
+                for v in window.views()
+                if v.settings().get("claudette_is_chat_view", False)
             ]
-            closed_was_primary = mgr.view is not None and mgr.view.id() == view_id
+            closed_was_primary = (
+                mgr.view is not None and mgr.view.id() == view_id
+            )
             if not chat_views:
                 mgr.view = None
                 del cls._instances[wid]
                 return
             if closed_was_primary:
                 mgr.view = chat_views[0]
-                mgr.view.settings().set('claudette_is_current_chat', True)
+                mgr.view.settings().set("claudette_is_current_chat", True)
                 for v in chat_views[1:]:
-                    v.settings().set('claudette_is_current_chat', False)
+                    v.settings().set("claudette_is_current_chat", False)
             return
         for wid, mgr in list(cls._instances.items()):
             if not cls._manager_handles_view_id(mgr, view_id):
@@ -135,15 +144,15 @@ class ClaudetteChatView:
         self._tool_status_message = {}
 
     def _configure_new_chat_view(self, view):
-        """Apply name, syntax, scratch, read-only, and claudette_* settings from package settings."""
-        chat_settings = self.settings.get('chat', {})
-        line_numbers = chat_settings.get('line_numbers', False)
-        rulers = chat_settings.get('rulers', False)
-        set_scratch = chat_settings.get('set_scratch', True)
+        """Apply chat view options from package settings."""
+        chat_settings = self.settings.get("chat", {})
+        line_numbers = chat_settings.get("line_numbers", False)
+        rulers = chat_settings.get("rulers", False)
+        set_scratch = chat_settings.get("set_scratch", True)
 
         view.set_name("Claude Chat")
         view.set_scratch(set_scratch)
-        view.assign_syntax('Packages/Markdown/Markdown.sublime-syntax')
+        view.assign_syntax("Packages/Markdown/Markdown.sublime-syntax")
         view.set_read_only(True)
         view.settings().set("line_numbers", line_numbers)
         view.settings().set("rulers", rulers)
@@ -152,35 +161,40 @@ class ClaudetteChatView:
 
     @staticmethod
     def _mark_only_current_chat(window, new_view):
-        """Set new_view as the current chat; clear current flag on other chat views in the window."""
+        """Mark new_view as current chat; clear flag on other chats."""
         for v in window.views():
-            if v != new_view and v.settings().get('claudette_is_chat_view', False):
-                v.settings().set('claudette_is_current_chat', False)
-        new_view.settings().set('claudette_is_current_chat', True)
+            if v != new_view and v.settings().get(
+                "claudette_is_chat_view", False
+            ):
+                v.settings().set("claudette_is_current_chat", False)
+        new_view.settings().set("claudette_is_current_chat", True)
 
     def create_or_get_view(self):
         """Create a new chat view or return an existing one."""
         try:
             # First check for current chat view in this window
             for view in self.window.views():
-                if (view.settings().get('claudette_is_chat_view', False) and
-                    view.settings().get('claudette_is_current_chat', False)):
+                if view.settings().get(
+                    "claudette_is_chat_view", False
+                ) and view.settings().get("claudette_is_current_chat", False):
                     self.view = view
                     return self.view
 
             # If no current chat view found, use the first chat view
             for view in self.window.views():
-                if view.settings().get('claudette_is_chat_view', False):
+                if view.settings().get("claudette_is_chat_view", False):
                     self.view = view
                     # Set this view as current since none was marked as current
-                    view.settings().set('claudette_is_current_chat', True)
+                    view.settings().set("claudette_is_current_chat", True)
                     return self.view
 
             # Create new chat view if none exists in this window
             self.view = self.window.new_file()
             if not self.view:
                 print(f"{PLUGIN_NAME} Error: Could not create new file")
-                sublime.error_message(f"{PLUGIN_NAME} Error: Could not create new file")
+                sublime.error_message(
+                    f"{PLUGIN_NAME} Error: Could not create new file"
+                )
                 return None
 
             self._configure_new_chat_view(self.view)
@@ -190,15 +204,19 @@ class ClaudetteChatView:
 
         except Exception as e:
             print(f"{PLUGIN_NAME} Error creating chat panel: {str(e)}")
-            sublime.error_message(f"{PLUGIN_NAME} Error: Could not create chat panel")
+            sublime.error_message(
+                f"{PLUGIN_NAME} Error: Could not create chat panel"
+            )
             return None
 
     def create_new_chat_view(self):
-        """Create an additional chat tab and make it the current chat for this window."""
+        """Create another chat tab and make it the current chat."""
         new_view = self.window.new_file()
         if not new_view:
             print(f"{PLUGIN_NAME} Error: Could not create new file")
-            sublime.error_message(f"{PLUGIN_NAME} Error: Could not create new file")
+            sublime.error_message(
+                f"{PLUGIN_NAME} Error: Could not create new file"
+            )
             return None
         self._configure_new_chat_view(new_view)
         self._mark_only_current_chat(self.window, new_view)
@@ -209,7 +227,9 @@ class ClaudetteChatView:
         """Get or create a phantom set for the specific view."""
         view_id = view.id()
         if view_id not in self.phantom_sets:
-            self.phantom_sets[view_id] = sublime.PhantomSet(view, f"code_block_buttons_{view_id}")
+            self.phantom_sets[view_id] = sublime.PhantomSet(
+                view, f"code_block_buttons_{view_id}"
+            )
         return self.phantom_sets[view_id]
 
     def _get_tool_status_phantom_set(self, view):
@@ -225,13 +245,12 @@ class ClaudetteChatView:
         """Build HTML for the status line: message + spinner at end."""
         escaped_msg = self.escape_html(message)
         escaped_char = self.escape_html(spinner_char)
-        return (
-            'ℹ️ {0} {1}'
-        ).format(escaped_msg, escaped_char)
+        return ("ℹ️ {0} {1}").format(escaped_msg, escaped_char)
 
     def set_tool_status(self, message):
         """
-        Show or update the tool status line as a phantom (message + spinner at end).
+        Show or update tool status as a phantom (message + spinner).
+
         Call with message=None to clear. Spinner animates on a timer.
         """
         if not self.view:
@@ -257,11 +276,11 @@ class ClaudetteChatView:
         if not already_running:
             sublime.set_timeout(
                 lambda: self._schedule_tool_status_spinner(),
-                SPINNER_INTERVAL_MS
+                SPINNER_INTERVAL_MS,
             )
 
     def _schedule_tool_status_spinner(self):
-        """Update the status phantom with next spinner frame; schedule next tick."""
+        """Advance spinner frame and schedule the next tick."""
         if not self.view:
             return
         view_id = self.view.id()
@@ -278,8 +297,7 @@ class ClaudetteChatView:
         phantom = sublime.Phantom(region, html, sublime.LAYOUT_INLINE, None)
         phantom_set.update([phantom])
         sublime.set_timeout(
-            lambda: self._schedule_tool_status_spinner(),
-            SPINNER_INTERVAL_MS
+            lambda: self._schedule_tool_status_spinner(), SPINNER_INTERVAL_MS
         )
 
     def clear_tool_status(self):
@@ -298,11 +316,15 @@ class ClaudetteChatView:
         if not self.view:
             return []
 
-        conversation_json = self.view.settings().get('claudette_conversation_json', '[]')
+        conversation_json = self.view.settings().get(
+            "claudette_conversation_json", "[]"
+        )
         try:
             return json.loads(conversation_json)
         except json.JSONDecodeError:
-            print(f"{PLUGIN_NAME} Error: Could not decode conversation history")
+            print(
+                f"{PLUGIN_NAME} Error: Could not decode conversation history"
+            )
             return []
 
     def add_to_conversation(self, role: str, content):
@@ -315,24 +337,25 @@ class ClaudetteChatView:
             return
 
         conversation = self.get_conversation_history()
-        conversation.append({
-            "role": role,
-            "content": content
-        })
+        conversation.append({"role": role, "content": content})
 
         try:
             conversation_json = json.dumps(conversation)
-            self.view.settings().set('claudette_conversation_json', conversation_json)
+            self.view.settings().set(
+                "claudette_conversation_json", conversation_json
+            )
         except json.JSONEncodeError:
-            print(f"{PLUGIN_NAME} Error: Could not encode conversation history")
+            print(
+                f"{PLUGIN_NAME} Error: Could not encode conversation history"
+            )
 
     def handle_question(self, question: str):
-        """Handle a new question and return the complete conversation context."""
+        """Record question and return full conversation context."""
         self.add_to_conversation("user", question)
         return self.get_conversation_history()
 
     def handle_response(self, response: str):
-        """Handle the Claude response by adding it to the conversation history."""
+        """Append assistant response to conversation history."""
         self.add_to_conversation("assistant", response)
 
     def append_text(self, text, scroll_to_end=False):
@@ -341,11 +364,14 @@ class ClaudetteChatView:
             return
 
         self.view.set_read_only(False)
-        self.view.run_command('append', {
-            'characters': text,
-            'force': True,
-            'scroll_to_end': scroll_to_end
-        })
+        self.view.run_command(
+            "append",
+            {
+                "characters": text,
+                "force": True,
+                "scroll_to_end": scroll_to_end,
+            },
+        )
         self.view.set_read_only(True)
 
     def focus(self):
@@ -361,10 +387,10 @@ class ClaudetteChatView:
         """Clear the chat view content and buttons."""
         if self.view:
             self.view.set_read_only(False)
-            self.view.run_command('select_all')
-            self.view.run_command('right_delete')
+            self.view.run_command("select_all")
+            self.view.run_command("right_delete")
             self.view.set_read_only(True)
-            self.view.settings().set('claudette_conversation_json', '[]')
+            self.view.settings().set("claudette_conversation_json", "[]")
             self.clear_buttons()
 
     def clear_buttons(self):
@@ -377,7 +403,7 @@ class ClaudetteChatView:
                 self.existing_button_positions[view_id].clear()
 
     def on_streaming_complete(self) -> None:
-        """Handle code blocks and phantom buttons when streaming is complete."""
+        """Finalize code blocks and copy buttons after streaming."""
         if not self.view:
             return
 
@@ -410,7 +436,7 @@ class ClaudetteChatView:
                     region,
                     button_html,
                     sublime.LAYOUT_BLOCK,
-                    lambda href, code=block.content: self.handle_copy(code)
+                    lambda href, code=block.content: self.handle_copy(code),
                 )
                 phantoms.append(phantom)
                 new_positions.add(block.end_pos)
@@ -430,20 +456,24 @@ class ClaudetteChatView:
             sublime.status_message("Error copying code to clipboard")
 
     def add_select_model_button(self, position):
-        """Add a phantom button to open the select model panel at the given position."""
+        """Add a button that opens the select model panel."""
         if not self.view:
             return
 
         phantom_set = self.get_phantom_set(self.view)
         button_positions = self.get_button_positions(self.view)
-        button_html = '''<div class="code-block-button"><a class="copy-button" href="select_model">Select Model</a></div>'''
+        button_html = (
+            '<div class="code-block-button">'
+            '<a class="copy-button" href="select_model">Select Model</a>'
+            "</div>"
+        )
 
         region = sublime.Region(position, position)
         phantom = sublime.Phantom(
             region,
             button_html,
             sublime.LAYOUT_BLOCK,
-            lambda href: self.handle_select_model()
+            lambda href: self.handle_select_model(),
         )
 
         # Get existing phantoms and add the new one
@@ -451,17 +481,16 @@ class ClaudetteChatView:
         existing_phantoms.append(phantom)
         phantom_set.update(existing_phantoms)
 
-        # Track the button position so it's preserved when code blocks are updated
+        # Track position so it survives code-block phantom updates
         button_positions.add(position)
 
-        # Move cursor to the line after the button
-        # Phantoms are rendered but don't take up space, so we add a newline and place cursor there
+        # Move cursor after the button. Phantoms don't take space; append
+        # newline and place the caret there.
         self.view.set_read_only(False)
-        self.view.run_command('append', {
-            'characters': '\n',
-            'force': True,
-            'scroll_to_end': True
-        })
+        self.view.run_command(
+            "append",
+            {"characters": "\n", "force": True, "scroll_to_end": True},
+        )
         end_point = self.view.size()
         self.view.sel().clear()
         self.view.sel().add(sublime.Region(end_point, end_point))
@@ -471,7 +500,7 @@ class ClaudetteChatView:
         """Open the select model panel when button is clicked."""
         try:
             if self.window:
-                self.window.run_command('claudette_select_model_panel')
+                self.window.run_command("claudette_select_model_panel")
         except Exception as e:
             print(f"{PLUGIN_NAME} Error opening select model panel: {str(e)}")
             sublime.status_message("Error opening select model panel")
@@ -484,12 +513,14 @@ class ClaudetteChatView:
         for match in re.finditer(pattern, content, re.DOTALL):
             language = match.group(1).strip()
             content = match.group(2).strip()
-            blocks.append(ClaudetteCodeBlock(
-                content=content,
-                start_pos=match.start(),
-                end_pos=match.end(),
-                language=language
-            ))
+            blocks.append(
+                ClaudetteCodeBlock(
+                    content=content,
+                    start_pos=match.start(),
+                    end_pos=match.end(),
+                    language=language,
+                )
+            )
         return blocks
 
     def validate_and_fix_code_blocks(self) -> None:
@@ -498,45 +529,52 @@ class ClaudetteChatView:
             return
 
         content = self.view.substr(sublime.Region(0, self.view.size()))
-        lines = content.split('\n')
+        lines = content.split("\n")
         stack = []
         fixes_needed = []
 
         for i, line in enumerate(lines):
             stripped = line.strip()
 
-            if stripped.startswith('```'):
+            if stripped.startswith("```"):
                 if len(stripped) > 3:  # Opening block with language
                     stack.append((i, stripped[3:].strip()))
-                elif stripped == '```':
+                elif stripped == "```":
                     if stack:  # Proper closing
                         stack.pop()
                     else:  # Orphaned closing marker
-                        fixes_needed.append((i, 'remove'))
+                        fixes_needed.append((i, "remove"))
 
         # Handle unclosed blocks
         if stack:
             self.view.set_read_only(False)
             for _, language in stack:
-                self.view.run_command('append', {
-                    'characters': '\n```',
-                    'force': True,
-                    'scroll_to_end': True
-                })
+                self.view.run_command(
+                    "append",
+                    {
+                        "characters": "\n```",
+                        "force": True,
+                        "scroll_to_end": True,
+                    },
+                )
             self.view.set_read_only(True)
 
     @staticmethod
     def escape_html(text: str) -> str:
         """Safely escape HTML special characters."""
-        return (text
-                .replace('&', '&amp;')
-                .replace('"', '&quot;')
-                .replace('<', '&lt;')
-                .replace('>', '&gt;'))
+        return (
+            text.replace("&", "&amp;")
+            .replace('"', "&quot;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
 
     def create_button_html(self, code: str) -> str:
         """Create HTML for the copy button with optional language indicator."""
-        return f'''<div class="code-block-button"><a class="copy-button" href="copy:{code}">Copy</a></div>'''
+        return (
+            '<div class="code-block-button">'
+            f'<a class="copy-button" href="copy:{code}">Copy</a></div>'
+        )
 
     def _clear_view_resources(self, view_id):
         """Clear phantoms and per-view state for a single view id."""

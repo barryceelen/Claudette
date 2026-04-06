@@ -1,5 +1,6 @@
 import sublime
 
+
 class ClaudetteStreamingResponseHandler:
     def __init__(self, view, on_complete=None, response_header_end=None):
         self.view = view
@@ -15,16 +16,15 @@ class ClaudetteStreamingResponseHandler:
         """Output text to the view."""
         if text:
             self.view.set_read_only(False)
-            self.view.run_command('append', {
-                'characters': text,
-                'force': True,
-                'scroll_to_end': False
-            })
+            self.view.run_command(
+                "append",
+                {"characters": text, "force": True, "scroll_to_end": False},
+            )
             self.view.set_read_only(True)
             self._last_output_char = text[-1]
 
     def _insert_at_response_header(self, text):
-        """Insert text immediately after # Claude's Response (before streamed content)."""
+        """Insert text after # Claude's Response (before streamed body)."""
         if self.response_header_end is None or not text:
             return
         pos = self.response_header_end
@@ -32,15 +32,23 @@ class ClaudetteStreamingResponseHandler:
         try:
             self.view.sel().clear()
             self.view.sel().add(sublime.Region(pos, pos))
-            self.view.run_command('insert', {'characters': text})
+            self.view.run_command("insert", {"characters": text})
             self.view.sel().clear()
-            self.view.sel().add(sublime.Region(self.view.size(), self.view.size()))
+            self.view.sel().add(
+                sublime.Region(self.view.size(), self.view.size())
+            )
         finally:
             self.view.set_read_only(True)
         if text:
             self._last_output_char = text[-1]
 
-    def append_chunk(self, chunk, is_done=False, insert_after_response_header=False, defer_to_end=False):
+    def append_chunk(
+        self,
+        chunk,
+        is_done=False,
+        insert_after_response_header=False,
+        defer_to_end=False,
+    ):
         if insert_after_response_header and chunk:
             self._insert_at_response_header(chunk)
             return
@@ -53,10 +61,16 @@ class ClaudetteStreamingResponseHandler:
                 self._deferred_chunks = []
             return
 
-        # Add line break when new sentence starts without separator (e.g. "results.Based")
-        if (chunk and chunk[0].isupper() and self._last_output_char is not None and
-                self._last_output_char in '.!?' and not self.at_line_start):
-            self._output_text('\n')
+        # Line break when a new sentence starts without separator
+        # (e.g. "results.Based")
+        if (
+            chunk
+            and chunk[0].isupper()
+            and self._last_output_char is not None
+            and self._last_output_char in ".!?"
+            and not self.at_line_start
+        ):
+            self._output_text("\n")
             self.at_line_start = True
 
         # Process chunk character by character to convert h1 headings to h2,
@@ -85,7 +99,7 @@ class ClaudetteStreamingResponseHandler:
             else:
                 self._output_text(char)
 
-            if char == '\n':
+            if char == "\n":
                 self.at_line_start = True
 
         # Flush buffer on completion

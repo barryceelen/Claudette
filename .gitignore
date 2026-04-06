@@ -6,3 +6,5 @@ repomix-output.*
 # Python
 __pycache__/
 *.py[cod]
+.venv/
+.ruff_cache/

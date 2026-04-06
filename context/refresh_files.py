@@ -1,7 +1,10 @@
+import os
+
 import sublime
 import sublime_plugin
-import os
+
 from .file_handler import ClaudetteFileHandler
+
 
 class ClaudetteContextRefreshFilesCommand(sublime_plugin.WindowCommand):
     def run(self):
@@ -11,10 +14,14 @@ class ClaudetteContextRefreshFilesCommand(sublime_plugin.WindowCommand):
 
         for window in sublime.windows():
             for chat_view in window.views():
-                if not chat_view.settings().get('claudette_is_chat_view', False):
+                if not chat_view.settings().get(
+                    "claudette_is_chat_view", False
+                ):
                     continue
 
-                context_files = chat_view.settings().get('claudette_context_files', {})
+                context_files = chat_view.settings().get(
+                    "claudette_context_files", {}
+                )
                 if not context_files:
                     continue
 
@@ -25,19 +32,21 @@ class ClaudetteContextRefreshFilesCommand(sublime_plugin.WindowCommand):
                 view_removed_count = 0
 
                 for relative_path, file_info in context_files.items():
-                    file_path = file_info['absolute_path']
+                    file_path = file_info["absolute_path"]
 
                     # Skip files that no longer exist
                     if not os.path.exists(file_path):
                         view_removed_count += 1
                         continue
 
-                    root_folder = file_path[:file_path.rindex(relative_path)]
+                    root_folder = file_path[: file_path.rindex(relative_path)]
                     if file_handler.process_file(file_path, root_folder):
                         view_updated_count += 1
 
                 if view_updated_count > 0 or view_removed_count > 0:
-                    chat_view.settings().set('claudette_context_files', file_handler.files)
+                    chat_view.settings().set(
+                        "claudette_context_files", file_handler.files
+                    )
                     if view_updated_count > 0:
                         updated_views += 1
                         updated_files += view_updated_count
@@ -47,15 +56,15 @@ class ClaudetteContextRefreshFilesCommand(sublime_plugin.WindowCommand):
         message_parts = []
 
         if updated_files > 0:
+            uf = "file" if updated_files == 1 else "files"
+            uv = "view" if updated_views == 1 else "views"
             message_parts.append(
-                f"Updated {updated_files} {'file' if updated_files == 1 else 'files'} "
-                f"in {updated_views} {'view' if updated_views == 1 else 'views'}"
+                f"Updated {updated_files} {uf} in {updated_views} {uv}"
             )
 
         if removed_files > 0:
-            message_parts.append(
-                f"Removed {removed_files} missing {'file' if removed_files == 1 else 'files'}"
-            )
+            rf = "file" if removed_files == 1 else "files"
+            message_parts.append(f"Removed {removed_files} missing {rf}")
 
         if message_parts:
             sublime.status_message(", ".join(message_parts))
@@ -66,7 +75,8 @@ class ClaudetteContextRefreshFilesCommand(sublime_plugin.WindowCommand):
         """Enable command if any chat view has context files"""
         for window in sublime.windows():
             for view in window.views():
-                if (view.settings().get('claudette_is_chat_view', False) and
-                    bool(view.settings().get('claudette_context_files', {}))):
+                if view.settings().get(
+                    "claudette_is_chat_view", False
+                ) and bool(view.settings().get("claudette_context_files", {})):
                     return True
         return False
