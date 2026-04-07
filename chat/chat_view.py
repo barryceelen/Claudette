@@ -499,14 +499,18 @@ class ClaudetteChatView:
             sublime.status_message("Error opening select model panel")
 
     def find_code_blocks(self, content: str) -> List[ClaudetteCodeBlock]:
-        """Find all fenced code blocks in the content (stateful Markdown parser)."""
+        """Find all fenced code blocks in the content (stateful Markdown
+        parser).
+        """
         return find_fenced_code_blocks(content)
 
     def validate_and_fix_code_blocks(self) -> None:
-        """Append closing fence lines for any still-open fenced block (e.g. truncated stream).
+        """Append closing fence lines for any still-open fenced block (e.g.
+        truncated stream).
 
-        Matches find_fenced_code_blocks rules: backtick and tilde fences, correct
-        close length. Orphan closing fences are left unchanged (harmless for the parser).
+        Matches find_fenced_code_blocks rules: backtick and tilde fences,
+        correct close length. Orphan closing fences are left unchanged
+        (harmless for the parser).
         """
         if not self.view:
             return

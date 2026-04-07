@@ -36,9 +36,7 @@ def _line_start_offsets(lines: List[str]) -> List[int]:
     return starts
 
 
-def _closing_fence_match(
-    line: str, fence_char: str, min_len: int
-) -> bool:
+def _closing_fence_match(line: str, fence_char: str, min_len: int) -> bool:
     """True if line is a valid closing fence (same char, length >= min_len)."""
     stripped = line.lstrip(" \t")
     if not stripped:
@@ -117,7 +115,8 @@ def find_fenced_code_blocks(content: str) -> List[ClaudetteCodeBlock]:
 
 
 def unclosed_fence_suffix_to_append(content: str) -> str:
-    """Return text to append so all open fences are closed (e.g. after streaming).
+    """Return text to append so all open fences are closed (e.g. after
+    streaming).
 
     Uses the same open/close rules as find_fenced_code_blocks. While inside a
     fence, lines are treated as body (no nested fence opens), which matches
