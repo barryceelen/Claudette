@@ -1,6 +1,4 @@
 import json
-import re
-from dataclasses import dataclass
 from typing import List, Set
 
 import sublime
@@ -8,16 +6,11 @@ import sublime_plugin
 
 from ..constants import PLUGIN_NAME, SPINNER_CHARS, SPINNER_INTERVAL_MS
 from ..utils import claudette_cleanup_copy_path_phantoms_for_view
-
-
-@dataclass
-class ClaudetteCodeBlock:
-    """Represents a code block found in the chat content."""
-
-    content: str
-    start_pos: int
-    end_pos: int
-    language: str
+from .fenced_code import (
+    ClaudetteCodeBlock,
+    find_fenced_code_blocks,
+    unclosed_fence_suffix_to_append,
+)
 
 
 class ClaudetteChatViewListener(sublime_plugin.ViewEventListener):
@@ -506,58 +499,33 @@ class ClaudetteChatView:
             sublime.status_message("Error opening select model panel")
 
     def find_code_blocks(self, content: str) -> List[ClaudetteCodeBlock]:
-        """Find all code blocks in the content."""
-        blocks = []
-        pattern = r"```([\w+]*)\n(.*?)\n```"
-
-        for match in re.finditer(pattern, content, re.DOTALL):
-            language = match.group(1).strip()
-            content = match.group(2).strip()
-            blocks.append(
-                ClaudetteCodeBlock(
-                    content=content,
-                    start_pos=match.start(),
-                    end_pos=match.end(),
-                    language=language,
-                )
-            )
-        return blocks
+        """Find all fenced code blocks in the content (stateful Markdown parser)."""
+        return find_fenced_code_blocks(content)
 
     def validate_and_fix_code_blocks(self) -> None:
-        """Validate and fix unclosed code blocks."""
+        """Append closing fence lines for any still-open fenced block (e.g. truncated stream).
+
+        Matches find_fenced_code_blocks rules: backtick and tilde fences, correct
+        close length. Orphan closing fences are left unchanged (harmless for the parser).
+        """
         if not self.view:
             return
 
         content = self.view.substr(sublime.Region(0, self.view.size()))
-        lines = content.split("\n")
-        stack = []
-        fixes_needed = []
+        suffix = unclosed_fence_suffix_to_append(content)
+        if not suffix:
+            return
 
-        for i, line in enumerate(lines):
-            stripped = line.strip()
-
-            if stripped.startswith("```"):
-                if len(stripped) > 3:  # Opening block with language
-                    stack.append((i, stripped[3:].strip()))
-                elif stripped == "```":
-                    if stack:  # Proper closing
-                        stack.pop()
-                    else:  # Orphaned closing marker
-                        fixes_needed.append((i, "remove"))
-
-        # Handle unclosed blocks
-        if stack:
-            self.view.set_read_only(False)
-            for _, language in stack:
-                self.view.run_command(
-                    "append",
-                    {
-                        "characters": "\n```",
-                        "force": True,
-                        "scroll_to_end": True,
-                    },
-                )
-            self.view.set_read_only(True)
+        self.view.set_read_only(False)
+        self.view.run_command(
+            "append",
+            {
+                "characters": suffix,
+                "force": True,
+                "scroll_to_end": True,
+            },
+        )
+        self.view.set_read_only(True)
 
     @staticmethod
     def escape_html(text: str) -> str:
