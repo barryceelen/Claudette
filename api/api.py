@@ -16,6 +16,7 @@ from ..constants import (
     SETTINGS_FILE,
 )
 from ..statusbar.spinner import ClaudetteSpinner
+from ..tools.bash import BashSession, initial_bash_cwd, run_bash_tool
 from ..tools.text_editor import (
     get_allowed_roots,
     resolve_path,
@@ -30,6 +31,7 @@ from .errors import (
 )
 from .session_stats import format_status_message, update_session_stats
 from .tools import (
+    build_bash_tool_def,
     build_text_editor_tool_def,
     build_web_search_tool_def,
     format_search_results,
@@ -187,6 +189,22 @@ class ClaudetteClaudeAPI:
                     system_message["cache_control"] = {"type": "ephemeral"}
                     system_messages.append(system_message)
 
+        if self.settings.get("bash_tool", False) and chat_view:
+            view = getattr(chat_view, "view", chat_view)
+            window_bash = view.window() if view else None
+            if window_bash:
+                cwd_hint = initial_bash_cwd(window_bash, self.settings)
+                system_messages.append(
+                    {
+                        "type": "text",
+                        "text": (
+                            "You have a persistent bash session. Initial "
+                            "working directory: {0}. Shell commands run on "
+                            "the user's machine with their permissions."
+                        ).format(cwd_hint),
+                    }
+                )
+
         return system_messages
 
     def _request_non_streaming(
@@ -263,11 +281,18 @@ class ClaudetteClaudeAPI:
             return
 
         text_editor_tool = self._get_text_editor_tool_def()
-        if not text_editor_tool:
-            handle_error("[Error] Text editor tool is not enabled.")
+        bash_tool_def = build_bash_tool_def(self.settings)
+        tools_list = []
+        if text_editor_tool:
+            tools_list.append(text_editor_tool)
+        if bash_tool_def:
+            tools_list.append(bash_tool_def)
+        if not tools_list:
+            handle_error(
+                "[Error] No agent tools are enabled (text editor or bash)."
+            )
             return
 
-        tools_list = [text_editor_tool]
         web_search_tool = build_web_search_tool_def(self.settings)
         if web_search_tool:
             tools_list.append(web_search_tool)
@@ -288,6 +313,17 @@ class ClaudetteClaudeAPI:
             )
         except (TypeError, ValueError):
             max_chars = None
+
+        bash_session = None
+        if bash_tool_def:
+            bash_cwd = initial_bash_cwd(window, settings)
+            bash_session = BashSession(bash_cwd, settings)
+            if not bash_session.bash_available:
+                handle_error(
+                    "[Error] bash was not found on PATH. Install bash or add "
+                    "it to PATH (e.g. Git Bash on Windows)."
+                )
+                return
 
         try:
             self.spinner.start("Fetching response")
@@ -344,10 +380,11 @@ class ClaudetteClaudeAPI:
                             chat_view_for_status.set_tool_status(label)
 
                     sublime.set_timeout(
-                        lambda: update_status("Reading/editing files…"), 0
+                        lambda: update_status("Running tools…"), 0
                     )
                     tool_results = []
                     assistant_content = []
+                    bash_chat_echo_seen = set()
                     for block in content:
                         if not isinstance(block, dict):
                             continue
@@ -356,6 +393,62 @@ class ClaudetteClaudeAPI:
                         elif block.get("type") == "tool_use":
                             assistant_content.append(block)
                             inp = block.get("input", {})
+                            tool_name = block.get("name", "") or ""
+
+                            if tool_name == "bash":
+                                cmd_preview = inp.get("command", "")
+                                if inp.get("restart"):
+                                    status_label = "Restarting bash…"
+                                else:
+                                    if isinstance(cmd_preview, str):
+                                        prev = cmd_preview.replace("\n", " ")
+                                        if len(prev) > 56:
+                                            prev = prev[:53] + "…"
+                                    else:
+                                        prev = "bash"
+                                    status_label = "Shell: {0}".format(prev)
+                                sublime.set_timeout(
+                                    lambda s=status_label: update_status(s), 0
+                                )
+                                if bash_session is None:
+                                    result = {
+                                        "type": "tool_result",
+                                        "tool_use_id": block.get("id", ""),
+                                        "content": (
+                                            "Error: Bash tool session is not "
+                                            "available."
+                                        ),
+                                        "is_error": True,
+                                    }
+                                else:
+                                    result = run_bash_tool(
+                                        block.get("id", ""),
+                                        inp,
+                                        bash_session,
+                                        chat_view=chat_view_for_status,
+                                        chat_echo_seen=bash_chat_echo_seen,
+                                    )
+                                tool_results.append(result)
+                                continue
+
+                            if tool_name not in (
+                                "str_replace_editor",
+                                "str_replace_based_edit_tool",
+                            ):
+                                tool_results.append(
+                                    {
+                                        "type": "tool_result",
+                                        "tool_use_id": block.get("id", ""),
+                                        "content": (
+                                            "Error: Unknown tool '{0}'.".format(
+                                                tool_name
+                                            )
+                                        ),
+                                        "is_error": True,
+                                    }
+                                )
+                                continue
+
                             raw_path = inp.get("path", "") or "file"
                             cmd = inp.get("command", "view")
                             action = {
@@ -409,7 +502,7 @@ class ClaudetteClaudeAPI:
                             )
                             result = run_text_editor_tool(
                                 block.get("id", ""),
-                                block.get("name", ""),
+                                tool_name,
                                 inp,
                                 window,
                                 settings,
@@ -539,6 +632,9 @@ class ClaudetteClaudeAPI:
                     lambda: chat_view_for_status.clear_tool_status(), 0
                 )
             handle_error("[Error] {0}".format(str(e)))
+        finally:
+            if bash_session is not None:
+                bash_session.close()
 
     def stream_response(self, chunk_callback, messages, chat_view=None):
         input_tokens = 0

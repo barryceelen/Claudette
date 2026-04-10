@@ -71,6 +71,19 @@
 	// "text_editor_tool_max_characters": 10000,
 	// Optional: extra allowed roots for file operations (paths must be under these or project folders).
 	"text_editor_tool_roots": [],
+	// When true, Claude can run shell commands in a persistent bash session on your machine.
+	// Uses non-streaming requests until the turn ends. Arbitrary code execution: enable only if you trust the model and your environment.
+	// https://platform.claude.com/docs/en/agents-and-tools/tool-use/bash-tool
+	"bash_tool": false,
+	// Max seconds for each bash tool command before it is killed and the session restarted.
+	"bash_tool_timeout": 120,
+	// Truncate combined stdout/stderr beyond this many bytes (UTF-8) with a notice.
+	"bash_tool_max_output_bytes": 100000,
+	// When true, show an OK/Cancel dialog before each bash command (restart is never prompted).
+	"bash_tool_confirm": true,
+	// When true, append each bash command to the chat as markdown (default false: avoids duplicate
+	// blocks when the model emits multiple identical tool_use calls in one response).
+	"bash_tool_echo_in_chat": false,
 	// Maximum number of web searches per request when web_search is enabled (1–20).
 	"web_search_max_uses": 5,
 	// Optional: only include results from these domains (e.g. ["example.com", "docs.example.com"]).

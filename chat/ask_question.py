@@ -221,13 +221,16 @@ class ClaudetteAskQuestionCommand(sublime_plugin.WindowCommand):
             sublime.set_timeout(smooth_scroll_to_question, 50)
 
             api = ClaudetteClaudeAPI()
-            use_text_editor = api.settings.get("text_editor_tool", False)
+            use_agent_tool_loop = (
+                api.settings.get("text_editor_tool", False)
+                or api.settings.get("bash_tool", False)
+            )
 
             message_start = self.chat_view.view.size()
 
             def on_complete():
                 # Clear in-chat tool status so it is not in saved response
-                if use_text_editor:
+                if use_agent_tool_loop:
                     self.chat_view.clear_tool_status()
                 # Add response to conversation history after streaming ends
                 response_end = self.chat_view.view.size()
@@ -241,7 +244,7 @@ class ClaudetteAskQuestionCommand(sublime_plugin.WindowCommand):
                 on_complete=on_complete,
                 response_header_end=message_start,
             )
-            if use_text_editor:
+            if use_agent_tool_loop:
                 target = api.run_with_text_editor_loop
                 args = (
                     handler.append_chunk,

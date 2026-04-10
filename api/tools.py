@@ -96,6 +96,21 @@ def build_text_editor_tool_def(settings, model):
     return tool_def
 
 
+def build_bash_tool_def(settings):
+    """Build bash tool definition from settings, or None if disabled.
+
+    Args:
+        settings: Sublime Text settings object (or dict-like).
+
+    Returns:
+        dict or None: The bash tool definition for the API request.
+    """
+    if not settings.get("bash_tool", False):
+        return None
+
+    return {"type": "bash_20250124", "name": "bash"}
+
+
 def parse_web_search_items(items):
     """Parse web search result items into markdown source lines.
 
