@@ -1,5 +1,16 @@
 [
 	{
+		"keys": ["enter"],
+		"command": "claudette_ask_question",
+		"context": [
+			{
+				"key": "setting.claudette_is_chat_view",
+				"operator": "equal",
+				"operand": true
+			}
+		]
+	},
+	{
 		"keys": ["escape"],
 		"command": "claudette_stop_request",
 		"context": [

@@ -22,21 +22,6 @@ class ClaudetteChatViewListener(sublime_plugin.ViewEventListener):
         """Only attach this listener to chat views."""
         return settings.get("claudette_is_chat_view", False)
 
-    def on_text_command(self, command_name, args):
-        """Handle enter key to send question."""
-        # Handle Enter key - send question
-        if command_name == "insert" and args.get("characters") == "\n":
-            try:
-                window = self.view.window()
-                if window:
-                    window.run_command("claudette_ask_question")
-                    return ("noop", None)
-            except Exception as e:
-                sublime.status_message(f"Claudette error: {str(e)}")
-            return None
-
-        return None
-
     def on_close(self):
         ClaudetteChatView.cleanup_for_closed_view(self.view)
         claudette_cleanup_copy_path_phantoms_for_view(self.view)
