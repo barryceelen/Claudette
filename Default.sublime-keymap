@@ -1,0 +1,13 @@
+[
+	{
+		"keys": ["escape"],
+		"command": "claudette_stop_request",
+		"context": [
+			{
+				"key": "setting.claudette_is_chat_view",
+				"operator": "equal",
+				"operand": true
+			}
+		]
+	}
+]

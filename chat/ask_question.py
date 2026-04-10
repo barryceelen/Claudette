@@ -225,12 +225,13 @@ class ClaudetteAskQuestionCommand(sublime_plugin.WindowCommand):
 
             message_start = self.chat_view.view.size()
 
-            # Create cancellation token for this request
-            cancellation_token = self.chat_view.start_request()
+            # Create cancellation token for this request, keyed to this view
+            request_view_id = self.chat_view.view.id()
+            cancellation_token = self.chat_view.start_request(request_view_id)
 
             def on_complete():
-                # Clear the active request token
-                self.chat_view.clear_request()
+                # Clear the active request token for this view
+                self.chat_view.clear_request(request_view_id)
                 # Clear in-chat tool status so it is not in saved response
                 if use_text_editor:
                     self.chat_view.clear_tool_status()

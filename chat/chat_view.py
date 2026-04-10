@@ -23,7 +23,7 @@ class ClaudetteChatViewListener(sublime_plugin.ViewEventListener):
         return settings.get("claudette_is_chat_view", False)
 
     def on_text_command(self, command_name, args):
-        """Handle enter key and escape key."""
+        """Handle enter key to send question."""
         # Handle Enter key - send question
         if command_name == "insert" and args.get("characters") == "\n":
             try:
@@ -34,15 +34,6 @@ class ClaudetteChatViewListener(sublime_plugin.ViewEventListener):
             except Exception as e:
                 sublime.status_message(f"Claudette error: {str(e)}")
             return None
-
-        # Handle Escape key - cancel active request
-        if command_name == "single_selection":
-            window = self.view.window()
-            if window and window.id() in ClaudetteChatView._instances:
-                chat_view = ClaudetteChatView._instances[window.id()]
-                if chat_view.has_active_request():
-                    chat_view.cancel_request()
-                    return ("noop", None)
 
         return None
 
@@ -148,7 +139,7 @@ class ClaudetteChatView:
         self._tool_status_active = {}
         self._tool_status_spinner_index = {}
         self._tool_status_message = {}
-        self._active_cancellation_token: Optional[CancellationToken] = None
+        self._cancellation_tokens = {}  # view_id -> CancellationToken
 
     def _configure_new_chat_view(self, view):
         """Apply chat view options from package settings."""
@@ -575,35 +566,64 @@ class ClaudetteChatView:
         self._tool_status_active.pop(view_id, None)
         self._tool_status_spinner_index.pop(view_id, None)
         self._tool_status_message.pop(view_id, None)
+        # Cancel and remove any active request token for this view
+        token = self._cancellation_tokens.pop(view_id, None)
+        if token and not token.is_cancelled():
+            token.cancel()
 
-    def start_request(self) -> CancellationToken:
-        """Create and store a new cancellation token for the active request."""
-        self._active_cancellation_token = CancellationToken()
-        return self._active_cancellation_token
+    def start_request(self, view_id: Optional[int] = None) -> CancellationToken:
+        """Create and store a new cancellation token for the active request.
 
-    def cancel_request(self) -> bool:
-        """Cancel the active request if one exists. Returns True if cancelled."""
-        if self._active_cancellation_token:
-            self._active_cancellation_token.cancel()
+        If view_id is provided the token is stored for that specific chat tab,
+        otherwise the current view is used.
+        """
+        if view_id is None:
+            view_id = self.view.id() if self.view else None
+        if view_id is None:
+            raise ValueError("No view available to start a request")
+        token = CancellationToken()
+        self._cancellation_tokens[view_id] = token
+        return token
+
+    def cancel_request(self, view_id: Optional[int] = None) -> bool:
+        """Cancel the active request if one exists.
+
+        Returns True only if a running (non-cancelled) request was newly
+        cancelled, preventing duplicate status messages on double-press.
+        """
+        if view_id is None:
+            view_id = self.view.id() if self.view else None
+        if view_id is None:
+            return False
+        token = self._cancellation_tokens.get(view_id)
+        if token and not token.is_cancelled():
+            token.cancel()
             return True
         return False
 
-    def clear_request(self):
-        """Clear the active cancellation token when request completes."""
-        self._active_cancellation_token = None
+    def clear_request(self, view_id: Optional[int] = None):
+        """Clear the cancellation token when request completes."""
+        if view_id is None:
+            view_id = self.view.id() if self.view else None
+        if view_id is not None:
+            self._cancellation_tokens.pop(view_id, None)
 
-    def has_active_request(self) -> bool:
+    def has_active_request(self, view_id: Optional[int] = None) -> bool:
         """Check if there is an active request that can be cancelled."""
-        return (
-            self._active_cancellation_token is not None
-            and not self._active_cancellation_token.is_cancelled()
-        )
+        if view_id is None:
+            view_id = self.view.id() if self.view else None
+        if view_id is None:
+            return False
+        token = self._cancellation_tokens.get(view_id)
+        return token is not None and not token.is_cancelled()
 
     def destroy(self):
         """Clean up the chat view and associated resources."""
-        # Cancel any active request before cleanup
-        self.cancel_request()
-        self.clear_request()
+        # Cancel all active requests before cleanup
+        for view_id, token in list(self._cancellation_tokens.items()):
+            if not token.is_cancelled():
+                token.cancel()
+        self._cancellation_tokens.clear()
 
         if self.view:
             self._clear_view_resources(self.view.id())

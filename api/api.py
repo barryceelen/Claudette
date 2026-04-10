@@ -1,5 +1,7 @@
 import json
 import os
+import select
+import socket
 import ssl
 import urllib.error
 import urllib.parse
@@ -197,7 +199,8 @@ class ClaudetteClaudeAPI:
         return system_messages
 
     def _request_non_streaming(
-        self, messages, system_messages, tools_list=None
+        self, messages, system_messages, tools_list=None,
+        cancellation_token=None,
     ):
         """
         Send a single non-streaming request.
@@ -205,6 +208,10 @@ class ClaudetteClaudeAPI:
         Returns (response_message_dict, usage_dict).
         response_message_dict has 'content' (list of blocks) and
         'stop_reason'.
+
+        If cancellation_token is provided, cancellation is checked while
+        reading the response body so the user isn't stuck waiting for
+        the full HTTP timeout.
         """
         headers = {
             "x-api-key": self.api_key,
@@ -232,8 +239,32 @@ class ClaudetteClaudeAPI:
         )
 
         ssl_context = self._get_ssl_context()
-        with urllib.request.urlopen(req, context=ssl_context) as response:
-            body = json.loads(response.read().decode("utf-8"))
+        with urllib.request.urlopen(
+            req, context=ssl_context, timeout=30
+        ) as response:
+            # Read in chunks so we can check for cancellation mid-flight
+            # instead of blocking for up to 30 seconds.
+            if cancellation_token:
+                try:
+                    response.fp._sock.settimeout(0.5)
+                except Exception:
+                    pass
+                chunks = []
+                while True:
+                    if cancellation_token.is_cancelled():
+                        response.close()
+                        raise CancelledException()
+                    try:
+                        chunk = response.read(8192)
+                    except socket.timeout:
+                        continue
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                raw = b"".join(chunks)
+            else:
+                raw = response.read()
+            body = json.loads(raw.decode("utf-8"))
 
         # Response may have message nested under 'message' or be the
         # message at top level.
@@ -315,7 +346,8 @@ class ClaudetteClaudeAPI:
                 check_cancelled()
                 try:
                     msg, usage = self._request_non_streaming(
-                        current_messages, system_messages, tools_list
+                        current_messages, system_messages, tools_list,
+                        cancellation_token=cancellation_token,
                     )
                 except urllib.error.HTTPError as e:
                     self.spinner.stop()
@@ -590,9 +622,7 @@ class ClaudetteClaudeAPI:
             )
 
         def is_cancelled():
-            return (
-                cancellation_token and cancellation_token.is_cancelled()
-            )
+            return cancellation_token and cancellation_token.is_cancelled()
 
         if not messages or not any(
             self._message_has_content(msg) for msg in messages
@@ -648,12 +678,35 @@ class ClaudetteClaudeAPI:
                 stream_current_block_type = None
                 stream_current_block_index = None
 
+                # Use a timeout so connection doesn't hang forever
                 with urllib.request.urlopen(
-                    req, context=ssl_context
+                    req, context=ssl_context, timeout=30
                 ) as response:
-                    for line in response:
-                        # Check for cancellation at start of each iteration
+                    # Get socket for select-based polling with timeout
+                    # This allows us to periodically check for cancellation
+                    sock = None
+                    try:
+                        # Try to get the underlying socket
+                        if hasattr(response.fp, "raw"):
+                            raw = response.fp.raw
+                            if hasattr(raw, "_sock"):
+                                sock = raw._sock
+                    except Exception:
+                        pass
+
+                    # When we cannot extract the raw socket for select(),
+                    # set a short read timeout so readline() doesn't block
+                    # indefinitely — this lets us check cancellation often.
+                    if sock is None:
+                        try:
+                            response.fp._sock.settimeout(0.5)
+                        except Exception:
+                            pass
+
+                    while True:
+                        # Check for cancellation before reading
                         if is_cancelled():
+                            response.close()
                             sublime.set_timeout(
                                 lambda: chunk_callback(
                                     "", is_done=True, was_cancelled=True
@@ -662,7 +715,33 @@ class ClaudetteClaudeAPI:
                             )
                             return
 
-                        if not line or line.isspace():
+                        # Use select to wait for data with timeout
+                        if sock is not None:
+                            try:
+                                ready, _, _ = select.select(
+                                    [sock], [], [], 0.3
+                                )
+                                if not ready:
+                                    # Timeout, check cancellation and retry
+                                    continue
+                            except (ValueError, OSError, TypeError):
+                                # Socket issue, fall through to blocking read
+                                sock = None
+                                try:
+                                    response.fp._sock.settimeout(0.5)
+                                except Exception:
+                                    pass
+
+                        try:
+                            line = response.readline()
+                        except socket.timeout:
+                            # Read timed out — loop back to check cancellation
+                            continue
+                        if not line:
+                            # End of stream
+                            break
+
+                        if line.isspace():
                             continue
 
                         try:

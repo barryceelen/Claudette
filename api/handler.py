@@ -1,5 +1,7 @@
 import sublime
 
+from ..utils import claudette_chat_status_message
+
 
 class ClaudetteStreamingResponseHandler:
     def __init__(self, view, on_complete=None, response_header_end=None):
@@ -62,12 +64,14 @@ class ClaudetteStreamingResponseHandler:
                 self._deferred_chunks = []
             return
 
-        # Handle cancellation: flush buffer and show cancelled message
+        # Handle cancellation: flush buffer and show message
         if was_cancelled:
             if self.line_buffer:
                 self._output_text(self.line_buffer)
                 self.line_buffer = ""
-            self._output_text("\n\n*[Request cancelled]*\n")
+            claudette_chat_status_message(
+                self.view.window(), "Request cancelled", "❎"
+            )
             self._completed = True
             if self.on_complete:
                 self.on_complete()

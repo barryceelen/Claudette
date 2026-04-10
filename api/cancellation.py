@@ -14,7 +14,3 @@ class CancellationToken:
 	def is_cancelled(self):
 		"""Check if cancellation was requested."""
 		return self._cancelled.is_set()
-
-	def reset(self):
-		"""Reset for reuse."""
-		self._cancelled.clear()
