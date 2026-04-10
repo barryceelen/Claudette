@@ -23,6 +23,7 @@ from ..tools.text_editor import (
 )
 from ..utils import claudette_chat_status_message, claudette_get_api_key_value
 from . import session_stats
+from .cancellation import CancellationToken
 from .errors import (
     handle_model_not_found,
     is_model_not_found_error,
@@ -35,6 +36,12 @@ from .tools import (
     format_search_results,
     parse_web_search_items,
 )
+
+
+class CancelledException(Exception):
+    """Raised when a request is cancelled."""
+
+    pass
 
 
 class ClaudetteClaudeAPI:
@@ -237,19 +244,30 @@ class ClaudetteClaudeAPI:
         return msg, usage
 
     def run_with_text_editor_loop(
-        self, chunk_callback, messages, chat_view, on_complete_cb=None
+        self,
+        chunk_callback,
+        messages,
+        chat_view,
+        on_complete_cb=None,
+        cancellation_token=None,
     ):
         """
         Run request loop with text editor tool: non-streaming requests
         until end_turn.
 
         Calls chunk_callback with final text and on_complete_cb when done.
+        If cancellation_token is provided, checks for cancellation between
+        iterations.
         """
 
         def handle_error(error_msg):
             sublime.set_timeout(
                 lambda: chunk_callback(error_msg, is_done=True), 0
             )
+
+        def check_cancelled():
+            if cancellation_token and cancellation_token.is_cancelled():
+                raise CancelledException()
 
         filtered = [m for m in messages if self._message_has_content(m)]
         if not filtered:
@@ -294,6 +312,7 @@ class ClaudetteClaudeAPI:
             current_messages = list(filtered)
 
             while True:
+                check_cancelled()
                 try:
                     msg, usage = self._request_non_streaming(
                         current_messages, system_messages, tools_list
@@ -417,6 +436,8 @@ class ClaudetteClaudeAPI:
                                 context_files=context_files,
                             )
                             tool_results.append(result)
+                            # Check for cancellation after each tool execution
+                            check_cancelled()
 
                     user_content = tool_results
                     current_messages.append(
@@ -532,6 +553,15 @@ class ClaudetteClaudeAPI:
                 )
                 return
 
+        except CancelledException:
+            self.spinner.stop()
+            if chat_view_for_status:
+                sublime.set_timeout(
+                    lambda: chat_view_for_status.clear_tool_status(), 0
+                )
+            sublime.set_timeout(
+                lambda: chunk_callback("", is_done=True, was_cancelled=True), 0
+            )
         except Exception as e:
             self.spinner.stop()
             if chat_view_for_status:
@@ -540,7 +570,15 @@ class ClaudetteClaudeAPI:
                 )
             handle_error("[Error] {0}".format(str(e)))
 
-    def stream_response(self, chunk_callback, messages, chat_view=None):
+    def stream_response(
+        self, chunk_callback, messages, chat_view=None, cancellation_token=None
+    ):
+        """
+        Stream a response from the API.
+
+        If cancellation_token is provided, checks for cancellation during
+        streaming and exits early if cancelled.
+        """
         input_tokens = 0
         output_tokens = 0
         web_search_requests = 0
@@ -549,6 +587,11 @@ class ClaudetteClaudeAPI:
         def handle_error(error_msg):
             sublime.set_timeout(
                 lambda: chunk_callback(error_msg, is_done=True), 0
+            )
+
+        def is_cancelled():
+            return (
+                cancellation_token and cancellation_token.is_cancelled()
             )
 
         if not messages or not any(
@@ -609,6 +652,16 @@ class ClaudetteClaudeAPI:
                     req, context=ssl_context
                 ) as response:
                     for line in response:
+                        # Check for cancellation at start of each iteration
+                        if is_cancelled():
+                            sublime.set_timeout(
+                                lambda: chunk_callback(
+                                    "", is_done=True, was_cancelled=True
+                                ),
+                                0,
+                            )
+                            return
+
                         if not line or line.isspace():
                             continue
 
