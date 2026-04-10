@@ -1,5 +1,7 @@
 import sublime
 
+from ..utils import claudette_chat_status_message
+
 
 class ClaudetteStreamingResponseHandler:
     def __init__(self, view, on_complete=None, response_header_end=None):
@@ -48,6 +50,7 @@ class ClaudetteStreamingResponseHandler:
         is_done=False,
         insert_after_response_header=False,
         defer_to_end=False,
+        was_cancelled=False,
     ):
         if insert_after_response_header and chunk:
             self._insert_at_response_header(chunk)
@@ -59,6 +62,19 @@ class ClaudetteStreamingResponseHandler:
                 for deferred in self._deferred_chunks:
                     self._output_text(deferred)
                 self._deferred_chunks = []
+            return
+
+        # Handle cancellation: flush buffer and show message
+        if was_cancelled:
+            if self.line_buffer:
+                self._output_text(self.line_buffer)
+                self.line_buffer = ""
+            claudette_chat_status_message(
+                self.view.window(), "Request cancelled", "❎"
+            )
+            self._completed = True
+            if self.on_complete:
+                self.on_complete()
             return
 
         # Line break when a new sentence starts without separator

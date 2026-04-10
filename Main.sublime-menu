@@ -15,6 +15,11 @@
 						"command": "claudette_ask_new_question"
 					},
 					{
+						"caption": "Stop Request",
+						"command": "claudette_stop_request"
+					},
+					{ "caption": "-" },
+					{
 						"caption": "Switch Model",
 						"command": "claudette_select_model_panel"
 					},
