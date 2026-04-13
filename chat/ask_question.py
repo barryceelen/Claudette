@@ -1,3 +1,4 @@
+﻿import random
 import threading
 
 import sublime
@@ -5,7 +6,7 @@ import sublime_plugin
 
 from ..api.api import ClaudetteClaudeAPI
 from ..api.handler import ClaudetteStreamingResponseHandler
-from ..constants import PLUGIN_NAME, SETTINGS_FILE
+from ..constants import PLUGIN_NAME, SETTINGS_FILE, TOOL_STATUS_MESSAGES
 from ..utils import claudette_chat_status_message, claudette_get_api_key_value
 from .chat_view import ClaudetteChatView
 
@@ -233,14 +234,15 @@ class ClaudetteAskQuestionCommand(sublime_plugin.WindowCommand):
                 # Clear the active request token for this view
                 self.chat_view.clear_request(request_view_id)
                 # Clear in-chat tool status so it is not in saved response
-                if use_text_editor:
-                    self.chat_view.clear_tool_status()
+                self.chat_view.clear_tool_status()
                 # Add response to conversation history after streaming ends
                 response_end = self.chat_view.view.size()
                 response_region = sublime.Region(message_start, response_end)
                 response_text = self.chat_view.view.substr(response_region)
                 self.chat_view.handle_response(response_text)
                 self.chat_view.on_streaming_complete()
+
+            self.chat_view.set_tool_status(random.choice(TOOL_STATUS_MESSAGES))
 
             handler = ClaudetteStreamingResponseHandler(
                 view=self.chat_view.view,
