@@ -1,4 +1,4 @@
-"""Minimal stubs for Sublime Text's embedded sublime module."""
+﻿"""Minimal stubs for Sublime Text's embedded sublime module."""
 
 from typing import Any, Callable, Iterable, Sequence, Tuple, Union, overload
 
@@ -27,6 +27,7 @@ def save_dialog(
     allow_folders: bool = ...,
 ) -> None: ...
 def ok_cancel_dialog(msg: str, ok_title: str = ...) -> bool: ...
+def platform() -> str: ...
 
 class Region:
     a: int
