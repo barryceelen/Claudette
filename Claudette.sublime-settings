@@ -57,8 +57,12 @@
 	// Index of the currently active system message in the system_messages setting.
 	"default_system_message_index": 0,
 	"temperature": "1.0",
+	// Maximum tool-use loop iterations per request before aborting (prevents runaway execution).
+	"max_tool_iterations": 50,
 	// When true, Claude can run shell commands in a persistent bash session on your machine.
 	// Uses non-streaming requests until the turn ends. Arbitrary code execution: enable only if you trust the model and your environment.
+	// The ban list and cd sandbox are best-effort speed bumps — not hard containment.
+	// The confirmation dialog (bash_tool_confirm) is the primary safety boundary.
 	// https://platform.claude.com/docs/en/agents-and-tools/tool-use/bash-tool
 	"bash_tool": false,
 	// Max seconds for each bash tool command before it is killed and the session restarted.

@@ -9,7 +9,6 @@ termination), static policy (banned commands, ``cd`` sandbox), and UX
 """
 
 import os
-import re
 import shlex
 import shutil
 import signal
@@ -173,11 +172,13 @@ def _path_under_allowed_roots(path: str, allowed_real: List[str]) -> bool:
 
 def _split_command_segments(command: str) -> List[str]:
     """
-    Split a compound shell line on ``;``, ``&&``, and ``||`` outside quotes.
+    Split a compound shell line on ``;``, ``&&``, ``||``, and ``|`` outside quotes.
 
     Used so banned-command and ``cd`` checks run per logical segment (e.g.
-    ``cd x && ls``) without pulling in a full shell parser dependency; quote
-    handling is intentionally simple but good enough for common model output.
+    ``cd x && ls`` or ``cat foo | nc host 80``) without pulling in a full shell
+    parser dependency; quote handling is intentionally simple but good enough
+    for common model output.  Splitting on ``|`` ensures ban-list checks cover
+    commands on both sides of a pipe.
     """
     parts = []
     buf = []
@@ -227,6 +228,14 @@ def _split_command_segments(command: str) -> List[str]:
                 parts.append(seg)
             buf = []
             i += 2
+            continue
+        # Single pipe (but not || which is handled above).
+        if c == "|":
+            seg = "".join(buf).strip()
+            if seg:
+                parts.append(seg)
+            buf = []
+            i += 1
             continue
         buf.append(c)
         i += 1
@@ -323,7 +332,17 @@ def _validate_cd_and_bans(
                     base
                 )
             )
-        if parts[0] == "cd" or base == "cd":
+        # Treat cd and pushd identically: both change cwd and need sandbox
+        # validation.  popd pops from a directory stack we cannot simulate
+        # reliably, so block it to prevent sandbox escape.
+        is_cd = parts[0] in ("cd", "pushd") or base in ("cd", "pushd")
+        is_popd = parts[0] == "popd" or base == "popd"
+        if is_popd:
+            return (
+                "Error: popd is not allowed. The directory stack cannot be "
+                "validated against allowed roots."
+            )
+        if is_cd:
             roots = (
                 [initial_cwd_real]
                 if restrict_initial_only
@@ -333,17 +352,17 @@ def _validate_cd_and_bans(
                 new_home = os.path.realpath(os.path.expanduser("~"))
                 if not _path_under_allowed_roots(new_home, roots):
                     return (
-                        "Error: cd without argument targets a directory outside "
-                        "allowed roots."
+                        "Error: {0} without argument targets a directory "
+                        "outside allowed roots.".format(parts[0])
                     )
                 simulated = new_home
             else:
                 target = _resolve_cd_target(parts[1], simulated)
                 if not _path_under_allowed_roots(target, roots):
                     return (
-                        "Error: cd to '{0}' was blocked. For security, the "
+                        "Error: {0} to '{1}' was blocked. For security, the "
                         "shell may only use directories under allowed "
-                        "roots.".format(target)
+                        "roots.".format(parts[0], target)
                     )
                 simulated = target
     return None
@@ -846,7 +865,7 @@ def _ask_permission_sync(command: str, cwd: str) -> bool:
     Show Sublime's OK/Cancel dialog for one command (main thread only).
 
     Sublime UI must run on the main thread; truncates long commands and shows
-    cwd so the user knows where the shell will run. Returns whether Run was
+    cwd so the user knows where the shell will run. Returns whether Allow was
     chosen.
     """
     display_cmd = command
@@ -858,13 +877,13 @@ def _ask_permission_sync(command: str, cwd: str) -> bool:
         cwd_display = cwd
         if len(cwd_display) > 120:
             cwd_display = "…" + cwd_display[-116:]
-        cwd_line = "\nWorking directory:\n{0}\n".format(cwd_display)
+        cwd_line = "\n\nWorking directory:\n{0}".format(cwd_display)
 
     return sublime.ok_cancel_dialog(
-        "Claude wants to run this command:{0}\n{1}\n\nAllow?".format(
-            cwd_line, display_cmd
+        "Claude wants to run this command:\n\n{0}{1}".format(
+            display_cmd, cwd_line
         ),
-        "Run",
+        "Allow",
     )
 
 

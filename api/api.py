@@ -345,7 +345,29 @@ class ClaudetteClaudeAPI:
             # Paths read in this agent loop (realpath -> mtime) for write safety.
             read_file_timestamps = {}
 
+            try:
+                max_iterations = max(1, int(
+                    settings.get("max_tool_iterations", 50)
+                ))
+            except (TypeError, ValueError):
+                max_iterations = 50
+            iteration = 0
+
             while True:
+                iteration += 1
+                if iteration > max_iterations:
+                    self.spinner.stop()
+                    if chat_view_for_status:
+                        sublime.set_timeout(
+                            lambda: chat_view_for_status.clear_tool_status(), 0
+                        )
+                    handle_error(
+                        "[Error] Tool loop exceeded {0} iterations. "
+                        "Stopping to prevent runaway execution. Adjust "
+                        "max_tool_iterations in settings to raise the "
+                        "limit.".format(max_iterations)
+                    )
+                    return
                 try:
                     msg, usage = self._request_non_streaming(
                         current_messages, system_messages, tools_list
