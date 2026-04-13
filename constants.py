@@ -1,3 +1,5 @@
+﻿import sublime
+
 ANTHROPIC_VERSION = "2023-06-01"
 DEFAULT_MODEL = "claude-sonnet-4-5"
 DEFAULT_BASE_URL = "https://api.anthropic.com/v1/"
@@ -5,11 +7,9 @@ MAX_TOKENS = 8192
 PLUGIN_NAME = "Claudette"
 SETTINGS_FILE = "Claudette.sublime-settings"
 DEFAULT_VERIFY_SSL = True
-SPINNER_CHARS = [
-    "·",
-    "✢",
-    "✳",
-    "✻",
-    "✽",
-]  # Probably also uses '∗', but makes the animation jumpy.
+SPINNER_CHARS = (
+	["·", "✢", "✳", "✻", "✽"]
+	if sublime.platform() == "osx"
+	else ["·", "✢", "*", "✻", "✽"]
+)
 SPINNER_INTERVAL_MS = 250
