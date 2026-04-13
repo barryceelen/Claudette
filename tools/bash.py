@@ -1,4 +1,4 @@
-"""
+﻿"""
 Bash tool executor for Anthropic's bash tool (persistent session).
 
 Runs model-requested shell commands in a long-lived ``bash`` subprocess and
@@ -243,25 +243,6 @@ def _split_command_segments(command: str) -> List[str]:
     if tail:
         parts.append(tail)
     return parts
-
-
-def _first_executable_token(segment: str) -> str:
-    """
-    Return the basename of the first token in a segment (for ban list matching).
-
-    Ignores comments and empty segments; uses ``shlex`` so leading env
-    assignments still yield the real command name for basename checks.
-    """
-    s = segment.strip()
-    if not s or s.startswith("#"):
-        return ""
-    try:
-        parts = shlex.split(s, posix=True)
-    except ValueError:
-        return ""
-    if not parts:
-        return ""
-    return os.path.basename(parts[0]).lower()
 
 
 def _get_banned_set(settings) -> Set[str]:
