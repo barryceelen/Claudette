@@ -404,10 +404,10 @@ def _command_matches_safe_shortcut(command: str, settings) -> bool:
     """
     Return whether a built-in read-only command may skip confirmation.
 
-    Only applies when ``bash_tool_safe_commands_shortcut`` is enabled
+    Only applies when ``bash_tool_allow_safe_commands`` is enabled
     in settings.
     """
-    if not settings.get("bash_tool_safe_commands_shortcut", False):
+    if not settings.get("bash_tool_allow_safe_commands", False):
         return False
     return _normalize_cmd_key(command) in _SAFE_COMMANDS
 
