@@ -57,20 +57,6 @@
 	// Index of the currently active system message in the system_messages setting.
 	"default_system_message_index": 0,
 	"temperature": "1.0",
-	// When true, Claude can search the web for up-to-date information. Only works
-	// with supported models (e.g. Claude Opus 4.6, 4.5, Sonnet 4.5, Haiku 4.5).
-	// Web search is billed at $10 per 1,000 searches in addition to token costs.
-	// https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool
-	"web_search": false,
-	// When true, Claude can view and edit files (view, str_replace, create, insert)
-	// in your project. Uses non-streaming requests until the turn ends.
-	// Paths are resolved against project folders or text_editor_tool_roots.
-	// https://platform.claude.com/docs/en/agents-and-tools/tool-use/text-editor-tool
-	"text_editor_tool": false,
-	// Optional: max characters when viewing a file (Claude 4 tool only). 0 = no limit.
-	// "text_editor_tool_max_characters": 10000,
-	// Optional: extra allowed roots for file operations (paths must be under these or project folders).
-	"text_editor_tool_roots": [],
 	// When true, Claude can run shell commands in a persistent bash session on your machine.
 	// Uses non-streaming requests until the turn ends. Arbitrary code execution: enable only if you trust the model and your environment.
 	// https://platform.claude.com/docs/en/agents-and-tools/tool-use/bash-tool
@@ -81,10 +67,41 @@
 	"bash_tool_max_output_bytes": 100000,
 	// When true, show an OK/Cancel dialog before each bash command (restart is never prompted).
 	"bash_tool_confirm": true,
+	// When bash_tool_confirm is true, these read-only commands skip the confirmation dialog:
+	// git status, git diff, git log, git branch, pwd, tree, date, which.
+	"bash_tool_allow_safe_commands": true,
 	// When true, append each bash command to the chat as markdown (default false: avoids duplicate
 	// blocks when the model emits multiple identical tool_use calls in one response).
 	"bash_tool_echo_in_chat": false,
+	// Optional: commands that skip confirmation when bash_tool_confirm is true (exact match after
+	// normalizing whitespace). Unsafe patterns (| $() ``) still require confirmation.
+	"bash_tool_allow_exact": [],
+	// Optional: command string prefixes that skip confirmation when bash_tool_confirm is true.
+	// Example: ["git status", "npm test"]. Unsafe patterns still require confirmation.
+	"bash_tool_allow_prefix": [],
+	// Extra banned command names (lowercase basenames) in addition to the built-in set (network
+	// clients, browsers, etc.). Example: ["docker"] to block the docker binary by first token.
+	"bash_tool_banned_commands_extra": [],
+	// When true (default), cd and cwd reset only allow directories under the session's
+	// initial working directory. Else, all directories that are open in the sidebar are allowed.
+	"bash_tool_restrict_to_initial_root_only": true,
+	// When true, Claude can view and edit files (view, str_replace, create, insert)
+	// in your project. Uses non-streaming requests until the turn ends.
+	// Paths are resolved against project folders or allowed_tool_roots.
+	// Same roots are used for the bash tool when enabled.
+	// https://platform.claude.com/docs/en/agents-and-tools/tool-use/text-editor-tool
+	"text_editor_tool": false,
+	// Optional: max characters when viewing a file (Claude 4 tool only). 0 = no limit.
+	// "text_editor_tool_max_characters": 10000,
+	// Optional: extra allowed directory roots for agent tools (text editor and bash; absolute paths).
+	// By default access to folders or files that are open in the sidebar is allowed.
+	"allowed_tool_roots": [],
 	// Maximum number of web searches per request when web_search is enabled (1–20).
+	// When true, Claude can search the web for up-to-date information. Only works
+	// with supported models (e.g. Claude Opus 4.6, 4.5, Sonnet 4.5, Haiku 4.5).
+	// Web search is billed at $10 per 1,000 searches in addition to token costs.
+	// https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool
+	"web_search": false,
 	"web_search_max_uses": 5,
 	// Optional: only include results from these domains (e.g. ["example.com", "docs.example.com"]).
 	// Do not set both web_search_allowed_domains and web_search_blocked_domains.

@@ -18,6 +18,7 @@ from ..constants import (
 from ..statusbar.spinner import ClaudetteSpinner
 from ..tools.bash import BashSession, initial_bash_cwd, run_bash_tool
 from ..tools.text_editor import (
+    NO_ALLOWED_ROOTS_MESSAGE,
     get_allowed_roots,
     resolve_path,
     run_text_editor_tool,
@@ -194,16 +195,17 @@ class ClaudetteClaudeAPI:
             window_bash = view.window() if view else None
             if window_bash:
                 cwd_hint = initial_bash_cwd(window_bash, self.settings)
-                system_messages.append(
-                    {
-                        "type": "text",
-                        "text": (
-                            "You have a persistent bash session. Initial "
-                            "working directory: {0}. Shell commands run on "
-                            "the user's machine with their permissions."
-                        ).format(cwd_hint),
-                    }
-                )
+                if cwd_hint:
+                    system_messages.append(
+                        {
+                            "type": "text",
+                            "text": (
+                                "You have a persistent bash session. Initial "
+                                "working directory: {0}. Shell commands run on "
+                                "the user's machine with their permissions."
+                            ).format(cwd_hint),
+                        }
+                    )
 
         return system_messages
 
@@ -316,8 +318,20 @@ class ClaudetteClaudeAPI:
 
         bash_session = None
         if bash_tool_def:
+            bash_allowed_roots = get_allowed_roots(window, settings)
             bash_cwd = initial_bash_cwd(window, settings)
-            bash_session = BashSession(bash_cwd, settings)
+            if not bash_allowed_roots or bash_cwd is None:
+                handle_error(
+                    "[Error] {0}".format(
+                        NO_ALLOWED_ROOTS_MESSAGE.replace("Error: ", "", 1).strip()
+                    )
+                )
+                return
+            bash_session = BashSession(
+                bash_cwd,
+                settings,
+                allowed_roots=bash_allowed_roots,
+            )
             if not bash_session.bash_available:
                 handle_error(
                     "[Error] bash was not found on PATH. Install bash or add "

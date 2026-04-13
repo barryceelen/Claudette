@@ -8,13 +8,43 @@ view/str_replace/create/insert, and returns tool_result payloads.
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
+NO_ALLOWED_ROOTS_MESSAGE = (
+    "Error: No allowed project roots. Add a folder to the sidebar, add "
+    "paths to the allowed_tool_roots setting, or save the active file so its "
+    "directory can be used."
+)
+
+
+def _extra_allowed_roots_from_settings(settings) -> List[str]:
+    """
+    Extra directories from the allowed_tool_roots setting (text editor and bash tools).
+
+    Entries are deduplicated by normalized path; order is preserved.
+    """
+    ordered: List[str] = []
+    seen = set()
+    if not settings:
+        return ordered
+    block = settings.get("allowed_tool_roots")
+    if not block or not isinstance(block, list):
+        return ordered
+    for path in block:
+        if not path or not isinstance(path, str):
+            continue
+        p = os.path.normpath(path.strip())
+        if p and os.path.isdir(p) and p not in seen:
+            seen.add(p)
+            ordered.append(p)
+    return ordered
+
 
 def get_allowed_roots(window, settings) -> List[str]:
     """
-    Return list of allowed filesystem roots for the text editor tool.
+    Return list of allowed filesystem roots for the text editor and bash tools.
 
-    Uses window.folders(), then text_editor_tool_roots, then the active
-    file's directory or the user home.
+    Order: sidebar folders (window.folders()), then allowed_tool_roots from settings.
+    If there are no sidebar folders yet, uses the active view's file directory when
+    the file is saved to disk.
     """
     roots = []
 
@@ -23,21 +53,14 @@ def get_allowed_roots(window, settings) -> List[str]:
         if folders:
             roots.extend(os.path.normpath(str(f)) for f in folders)
 
-    extra = settings.get("text_editor_tool_roots") if settings else None
-    if extra and isinstance(extra, list):
-        for path in extra:
-            if path and isinstance(path, str):
-                p = os.path.normpath(path.strip())
-                if p is not None and os.path.isdir(p) and p not in roots:
-                    roots.append(p)
+    for p in _extra_allowed_roots_from_settings(settings):
+        if p not in roots:
+            roots.append(p)
 
     if not roots and window:
         view = window.active_view()
         if view and view.file_name():
             roots.append(os.path.dirname(view.file_name()))
-
-    if not roots:
-        roots.append(os.path.expanduser("~"))
 
     return roots
 
@@ -462,6 +485,14 @@ def run_text_editor_tool(
     tool_use_id, content, and is_error.
     """
     allowed_roots = get_allowed_roots(window, settings)
+    if not allowed_roots:
+        return {
+            "type": "tool_result",
+            "tool_use_id": tool_use_id,
+            "content": NO_ALLOWED_ROOTS_MESSAGE,
+            "is_error": True,
+        }
+
     command = (input_params or {}).get("command", "")
     path = (input_params or {}).get("path", "")
 
