@@ -342,6 +342,8 @@ class ClaudetteClaudeAPI:
         try:
             self.spinner.start("Fetching response")
             current_messages = list(filtered)
+            # Paths read in this agent loop (realpath -> mtime) for write safety.
+            read_file_timestamps = {}
 
             while True:
                 try:
@@ -522,6 +524,7 @@ class ClaudetteClaudeAPI:
                                 settings,
                                 max_characters=max_chars,
                                 context_files=context_files,
+                                read_file_timestamps=read_file_timestamps,
                             )
                             tool_results.append(result)
 

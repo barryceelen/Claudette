@@ -3,10 +3,20 @@ Text editor tool executor for Anthropic's text editor tool.
 
 Resolves paths against allowed roots (e.g. project folders), runs
 view/str_replace/create/insert, and returns tool_result payloads.
+
+Security and safety: symlink-safe containment (``ensure_under_root``),
+read-before-write mtime tracking when ``read_file_timestamps`` is passed,
+encoding detection for read/write round-trips, and rejection of ``.ipynb``
+files (use a dedicated notebook editor).
 """
 
 import os
 from typing import Any, Dict, List, Optional, Tuple
+
+_IPYNB_NOT_SUPPORTED = (
+    "Error: Jupyter Notebook (.ipynb) files are not supported by the text "
+    "editor tool. Edit notebooks outside Claudette or convert to a script."
+)
 
 NO_ALLOWED_ROOTS_MESSAGE = (
     "Error: No allowed project roots. Add a folder to the sidebar, add "
@@ -63,6 +73,95 @@ def get_allowed_roots(window, settings) -> List[str]:
             roots.append(os.path.dirname(view.file_name()))
 
     return roots
+
+
+def _is_ipynb_path(resolved: str) -> bool:
+    return resolved.lower().endswith(".ipynb")
+
+
+def _read_file_with_encoding(path: str) -> Tuple[str, str]:
+    """
+    Read file text; detect encoding (UTF-8 BOM, UTF-8, UTF-8-sig, Latin-1).
+
+    Latin-1 is a last resort that decodes every byte; use for write-back only
+    when that path was chosen.
+    """
+    for enc in ("utf-8-sig", "utf-8", "latin-1"):
+        try:
+            with open(path, "r", encoding=enc) as f:
+                return f.read(), enc
+        except UnicodeDecodeError:
+            continue
+    raise OSError("Could not decode file as text.")
+
+
+def _write_file_with_encoding(path: str, text: str, encoding: str) -> None:
+    with open(path, "w", encoding=encoding, newline="") as f:
+        f.write(text)
+
+
+def _timestamp_key(path: str) -> str:
+    try:
+        return os.path.realpath(path)
+    except OSError:
+        return path
+
+
+def _stale_write_error(
+    path: str,
+    read_file_timestamps: Optional[Dict[str, float]],
+) -> Optional[str]:
+    """
+    Return an error if the file was not read or changed on disk since read.
+
+    Prevents overwriting edits made outside the tool loop.
+    When ``read_file_timestamps`` is None, checks are skipped (callers that do
+    not track reads).
+    """
+    if read_file_timestamps is None:
+        return None
+    key = _timestamp_key(path)
+    if key not in read_file_timestamps:
+        return (
+            "Error: File has not been read yet. Read it first before writing "
+            "to it."
+        )
+    try:
+        current = os.path.getmtime(path)
+    except OSError as e:
+        return "Error: Could not verify file state ({0}).".format(str(e))
+    if abs(current - read_file_timestamps[key]) > 1e-6:
+        return (
+            "Error: File has been modified since it was read. Read it again "
+            "before writing."
+        )
+    return None
+
+
+def _record_read(
+    path: str,
+    read_file_timestamps: Optional[Dict[str, float]],
+) -> None:
+    if read_file_timestamps is None:
+        return
+    if not os.path.isfile(path):
+        return
+    try:
+        read_file_timestamps[_timestamp_key(path)] = os.path.getmtime(path)
+    except OSError:
+        pass
+
+
+def _after_write_update(
+    path: str,
+    read_file_timestamps: Optional[Dict[str, float]],
+) -> None:
+    if read_file_timestamps is None:
+        return
+    try:
+        read_file_timestamps[_timestamp_key(path)] = os.path.getmtime(path)
+    except OSError:
+        pass
 
 
 def _find_in_context_files(
@@ -167,7 +266,10 @@ def resolve_path(
             found, is_active = _find_in_open_views(normalized, window)
             if found and is_active:
                 if ensure_under_root(found, allowed_roots):
-                    return found, None
+                    try:
+                        return os.path.realpath(found), None
+                    except OSError:
+                        return found, None
 
         # Priority 2: Context files (error if multiple matches)
         if context_files:
@@ -176,43 +278,66 @@ def resolve_path(
                 return None, err
             if found:
                 if ensure_under_root(found, allowed_roots):
-                    return found, None
+                    try:
+                        return os.path.realpath(found), None
+                    except OSError:
+                        return found, None
 
         # Priority 3: Other open views (non-active)
         if window:
             found, is_active = _find_in_open_views(normalized, window)
             if found and not is_active:
                 if ensure_under_root(found, allowed_roots):
-                    return found, None
+                    try:
+                        return os.path.realpath(found), None
+                    except OSError:
+                        return found, None
 
     # Normal: absolute paths or paths relative to allowed roots.
     if os.path.isabs(normalized):
+        try:
+            rp = os.path.realpath(normalized)
+        except OSError:
+            rp = normalized
         for root in allowed_roots:
             try:
-                if os.path.commonpath([root, normalized]) == root:
-                    return normalized, None
-            except ValueError:
+                rr = os.path.realpath(root)
+                if os.path.commonpath([rr, rp]) == rr:
+                    return rp, None
+            except (OSError, ValueError):
                 continue
         return None, "Error: Path is outside allowed project roots."
 
     for root in allowed_roots:
         candidate = os.path.normpath(os.path.join(root, normalized))
         try:
-            if os.path.commonpath([root, candidate]) == root:
-                return candidate, None
-        except ValueError:
+            rr = os.path.realpath(root)
+            rp = os.path.realpath(candidate)
+            if os.path.commonpath([rr, rp]) == rr:
+                return rp, None
+        except (OSError, ValueError):
             continue
 
     return None, "Error: Path is outside allowed project roots."
 
 
 def ensure_under_root(file_path: str, allowed_roots: List[str]) -> bool:
-    """Return True if file_path is under one of the allowed roots."""
+    """
+    Return True if ``file_path`` lies under an allowed root (symlink-safe).
+
+    Compares ``os.path.realpath`` of the file and each root so a path under a
+    root cannot escape via symlinks.
+    """
     try:
+        fp = os.path.realpath(file_path)
         for root in allowed_roots:
-            if os.path.commonpath([root, file_path]) == root:
-                return True
-    except ValueError:
+            try:
+                rr = os.path.realpath(root)
+                if os.path.commonpath([rr, fp]) == rr:
+                    return True
+            except (OSError, ValueError):
+                continue
+    except OSError:
         pass
     return False
 
@@ -224,9 +349,13 @@ def execute_view(
     max_characters: Optional[int] = None,
     context_files: Optional[Dict[str, Any]] = None,
     window=None,
+    read_file_timestamps: Optional[Dict[str, float]] = None,
 ) -> Tuple[str, bool]:
     """
     Execute the view command: read file or list directory.
+
+    Records mtime for regular files when ``read_file_timestamps`` is provided
+    so later writes can detect stale content.
 
     Returns (content_string, is_error).
     """
@@ -252,9 +381,11 @@ def execute_view(
     if not os.path.isfile(resolved):
         return "Error: File not found", True
 
+    if _is_ipynb_path(resolved):
+        return _IPYNB_NOT_SUPPORTED, True
+
     try:
-        with open(resolved, "r", encoding="utf-8", errors="replace") as f:
-            content = f.read()
+        content, _enc = _read_file_with_encoding(resolved)
     except OSError as e:
         return "Error: Could not read file: {0}".format(str(e)), True
 
@@ -290,6 +421,7 @@ def execute_view(
     ):
         content = content[:max_characters] + "\n... (truncated)"
 
+    _record_read(resolved, read_file_timestamps)
     return content, False
 
 
@@ -300,6 +432,7 @@ def execute_str_replace(
     allowed_roots: List[str],
     context_files: Optional[Dict[str, Any]] = None,
     window=None,
+    read_file_timestamps: Optional[Dict[str, float]] = None,
 ) -> Tuple[str, bool]:
     """
     Replace old_str with new_str in file exactly once.
@@ -321,9 +454,15 @@ def execute_str_replace(
     if not ensure_under_root(resolved, allowed_roots):
         return "Error: Path is outside allowed project roots.", True
 
+    if _is_ipynb_path(resolved):
+        return _IPYNB_NOT_SUPPORTED, True
+
+    stale = _stale_write_error(resolved, read_file_timestamps)
+    if stale:
+        return stale, True
+
     try:
-        with open(resolved, "r", encoding="utf-8") as f:
-            content = f.read()
+        content, enc = _read_file_with_encoding(resolved)
     except OSError as e:
         return "Error: Could not read file: {0}".format(str(e)), True
 
@@ -345,13 +484,13 @@ def execute_str_replace(
 
     new_content = content.replace(old_str, new_str, 1)
     try:
-        with open(resolved, "w", encoding="utf-8") as f:
-            f.write(new_content)
+        _write_file_with_encoding(resolved, new_content, enc)
     except OSError as e:
         return "Error: Permission denied. Cannot write to file. {0}".format(
             str(e)
         ), True
 
+    _after_write_update(resolved, read_file_timestamps)
     return "Successfully replaced text at exactly one location.", False
 
 
@@ -364,6 +503,9 @@ def execute_create(
 ) -> Tuple[str, bool]:
     """
     Create a new file with the given content.
+
+    Containment is checked before creating parent directories so we never
+    ``makedirs`` outside allowed roots.
 
     Returns (result_message, is_error).
     """
@@ -379,20 +521,26 @@ def execute_create(
     if os.path.exists(resolved):
         return "Error: File already exists.", True
 
-    parent = os.path.dirname(resolved)
-    if parent and not os.path.isdir(parent):
-        try:
-            os.makedirs(parent, exist_ok=True)
-        except OSError as e:
-            return "Error: Could not create directory: {0}".format(
-                str(e)
-            ), True
+    if _is_ipynb_path(resolved):
+        return _IPYNB_NOT_SUPPORTED, True
 
     if not ensure_under_root(resolved, allowed_roots):
         return "Error: Path is outside allowed project roots.", True
 
+    parent = os.path.dirname(resolved)
+    if parent:
+        if not ensure_under_root(parent, allowed_roots):
+            return "Error: Path is outside allowed project roots.", True
+        if not os.path.isdir(parent):
+            try:
+                os.makedirs(parent, exist_ok=True)
+            except OSError as e:
+                return "Error: Could not create directory: {0}".format(
+                    str(e)
+                ), True
+
     try:
-        with open(resolved, "w", encoding="utf-8") as f:
+        with open(resolved, "w", encoding="utf-8", newline="") as f:
             f.write(file_text)
     except OSError as e:
         return "Error: Permission denied. Cannot write to file. {0}".format(
@@ -409,6 +557,7 @@ def execute_insert(
     allowed_roots: List[str],
     context_files: Optional[Dict[str, Any]] = None,
     window=None,
+    read_file_timestamps: Optional[Dict[str, float]] = None,
 ) -> Tuple[str, bool]:
     """
     Insert text after the given line number (0 = beginning of file).
@@ -430,11 +579,21 @@ def execute_insert(
     if not ensure_under_root(resolved, allowed_roots):
         return "Error: Path is outside allowed project roots.", True
 
+    if _is_ipynb_path(resolved):
+        return _IPYNB_NOT_SUPPORTED, True
+
+    stale = _stale_write_error(resolved, read_file_timestamps)
+    if stale:
+        return stale, True
+
     try:
-        with open(resolved, "r", encoding="utf-8") as f:
-            lines = f.readlines()
+        raw, enc = _read_file_with_encoding(resolved)
     except OSError as e:
         return "Error: Could not read file: {0}".format(str(e)), True
+
+    lines = raw.splitlines(keepends=True)
+    if not lines and raw:
+        lines = [raw]
 
     insert_line = max(0, int(insert_line))
     if insert_line > len(lines):
@@ -457,13 +616,13 @@ def execute_insert(
         )
 
     try:
-        with open(resolved, "w", encoding="utf-8") as f:
-            f.write(new_content)
+        _write_file_with_encoding(resolved, new_content, enc)
     except OSError as e:
         return "Error: Permission denied. Cannot write to file. {0}".format(
             str(e)
         ), True
 
+    _after_write_update(resolved, read_file_timestamps)
     return "Successfully inserted text.", False
 
 
@@ -475,6 +634,7 @@ def run_text_editor_tool(
     settings,
     max_characters: Optional[int] = None,
     context_files: Optional[Dict[str, Any]] = None,
+    read_file_timestamps: Optional[Dict[str, float]] = None,
 ) -> dict:
     """
     Execute a single text editor tool call and return a tool_result block.
@@ -483,6 +643,11 @@ def run_text_editor_tool(
 
     Returns a dict for API user content, e.g. type tool_result with
     tool_use_id, content, and is_error.
+
+    Args:
+        read_file_timestamps: Optional map of realpath -> mtime from successful
+            ``view`` calls in this agent loop; required for str_replace/insert
+            stale checks. Omitted or None disables those checks.
     """
     allowed_roots = get_allowed_roots(window, settings)
     if not allowed_roots:
@@ -513,6 +678,7 @@ def run_text_editor_tool(
             max_characters=max_characters,
             context_files=context_files,
             window=window,
+            read_file_timestamps=read_file_timestamps,
         )
         return {
             "type": "tool_result",
@@ -531,6 +697,7 @@ def run_text_editor_tool(
             allowed_roots,
             context_files=context_files,
             window=window,
+            read_file_timestamps=read_file_timestamps,
         )
         return {
             "type": "tool_result",
@@ -565,6 +732,7 @@ def run_text_editor_tool(
             allowed_roots,
             context_files=context_files,
             window=window,
+            read_file_timestamps=read_file_timestamps,
         )
         return {
             "type": "tool_result",
