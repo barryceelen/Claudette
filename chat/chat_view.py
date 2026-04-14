@@ -225,7 +225,7 @@ class ClaudetteChatView:
         return self._tool_status_phantom_sets[view_id]
 
     def _tool_status_phantom_html(self, message, spinner_char):
-        """Build HTML for the status line: message + spinner at end."""
+        """Build HTML for the status line: info icon + message + spinner."""
         escaped_msg = self.escape_html(message)
         escaped_char = self.escape_html(spinner_char)
         return ("ℹ️ {0} {1}").format(escaped_msg, escaped_char)
