@@ -495,7 +495,7 @@ class ClaudetteClaudeAPI:
                                             prev = prev[:53] + "…"
                                     else:
                                         prev = "bash"
-                                    status_label = "Shell: {0}".format(prev)
+                                    status_label = "Bash: {0}".format(prev)
                                 sublime.set_timeout(
                                     lambda s=status_label: update_status(s), 0
                                 )
