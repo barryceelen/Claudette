@@ -86,26 +86,27 @@
 	//     "country": "US",
 	//     "timezone": "America/Los_Angeles"
 	// },
-	// Claude pricing per 1K tokens (as of December 2025)
+	// Claude pricing per 1M tokens (as of April 2026)
+	// https://www.anthropic.com/pricing#702702
 	"pricing": {
 		"haiku": {
-			"input": 0.001,
-			"output": 0.005,
-			"cache_write": 0.00125,
-			"cache_read": 0.0001
+			"input": 1,
+			"output": 5,
+			"cache_write": 1.25,
+			"cache_read": 0.1
 		},
 		"opus": {
-			"input": 0.005,
-			"output": 0.025,
-			"cache_write": 0.00625,
-			"cache_read": 0.0005
+			"input": 5,
+			"output": 25,
+			"cache_write": 6.25,
+			"cache_read": 0.5
 		},
 		"sonnet": {
-			"input": 0.003,
-			"output": 0.015,
-			"cache_write": 0.00375,
-			"cache_read": 0.0003
-		},
+			"input": 3,
+			"output": 15,
+			"cache_write": 3.75,
+			"cache_read": 0.3
+		}
 	},
 	"chat": {
 		"line_numbers": false,
