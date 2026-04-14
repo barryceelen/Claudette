@@ -8,6 +8,10 @@
 		"command": "claudette_ask_new_question"
 	},
 	{
+		"caption": "Claudette: Stop Request",
+		"command": "claudette_stop_request"
+	},
+	{
 		"caption": "Claudette: Clear Chat History",
 		"command": "claudette_clear_chat_history"
 	},

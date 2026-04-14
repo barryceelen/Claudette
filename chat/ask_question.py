@@ -1,3 +1,4 @@
+﻿import random
 import threading
 
 import sublime
@@ -5,8 +6,11 @@ import sublime_plugin
 
 from ..api.api import ClaudetteClaudeAPI
 from ..api.handler import ClaudetteStreamingResponseHandler
-from ..constants import PLUGIN_NAME, SETTINGS_FILE
-from ..utils import claudette_chat_status_message, claudette_get_api_key_value
+from ..constants import PLUGIN_NAME, SETTINGS_FILE, TOOL_STATUS_MESSAGES
+from ..utils import (
+    claudette_chat_status_message,
+    claudette_get_api_key_value,
+)
 from .chat_view import ClaudetteChatView
 
 
@@ -228,16 +232,36 @@ class ClaudetteAskQuestionCommand(sublime_plugin.WindowCommand):
 
             message_start = self.chat_view.view.size()
 
-            def on_complete():
+            # Create cancellation token for this request, keyed to this view
+            request_view_id = self.chat_view.view.id()
+            cancellation_token = self.chat_view.start_request(request_view_id)
+
+            def on_complete(usage_info=None):
+                # Clear the active request token for this view
+                self.chat_view.clear_request(request_view_id)
                 # Clear in-chat tool status so it is not in saved response
-                if use_agent_tool_loop:
-                    self.chat_view.clear_tool_status()
+                self.chat_view.clear_tool_status()
                 # Add response to conversation history after streaming ends
                 response_end = self.chat_view.view.size()
                 response_region = sublime.Region(message_start, response_end)
                 response_text = self.chat_view.view.substr(response_region)
                 self.chat_view.handle_response(response_text)
                 self.chat_view.on_streaming_complete()
+                # Display cost info in the chat view
+                if usage_info and self.settings.get("chat", {}).get("show_cost", True):
+                    input_tokens = usage_info.get("input_tokens", 0)
+                    output_tokens = usage_info.get("output_tokens", 0)
+                    cost = usage_info.get("cost", 0.0)
+                    session_cost = usage_info.get("session_cost", 0.0)
+                    cost_msg = (
+                        "Tokens: {0:,} in, {1:,} out. "
+                        "Cost: ${2:.4f} (${3:.4f} session)\n"
+                    ).format(input_tokens, output_tokens, cost, session_cost)
+                    claudette_chat_status_message(
+                        self.get_window(), cost_msg, "⚡️"
+                    )
+
+            self.chat_view.set_tool_status(random.choice(TOOL_STATUS_MESSAGES))
 
             handler = ClaudetteStreamingResponseHandler(
                 view=self.chat_view.view,
@@ -251,6 +275,7 @@ class ClaudetteAskQuestionCommand(sublime_plugin.WindowCommand):
                     conversation,
                     self.chat_view,
                     on_complete,
+                    cancellation_token,
                 )
             else:
                 target = api.stream_response
@@ -258,6 +283,7 @@ class ClaudetteAskQuestionCommand(sublime_plugin.WindowCommand):
                     handler.append_chunk,
                     conversation,
                     self.chat_view.view,
+                    cancellation_token,
                 )
 
             thread = threading.Thread(target=target, args=args)

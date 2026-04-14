@@ -46,14 +46,15 @@ def calculate_cost(
     if not price_tier:
         return 0
 
-    input_cost = ((input_tokens - cache_read_tokens) / 1000) * price_tier[
+    # Pricing is per 1M tokens
+    input_cost = ((input_tokens - cache_read_tokens) / 1_000_000) * price_tier[
         "input"
     ]
-    output_cost = (output_tokens / 1000) * price_tier["output"]
-    cache_write_cost = (cache_write_tokens / 1000) * price_tier.get(
+    output_cost = (output_tokens / 1_000_000) * price_tier["output"]
+    cache_write_cost = (cache_write_tokens / 1_000_000) * price_tier.get(
         "cache_write", 0
     )
-    cache_read_cost = (cache_read_tokens / 1000) * price_tier.get(
+    cache_read_cost = (cache_read_tokens / 1_000_000) * price_tier.get(
         "cache_read", 0
     )
 

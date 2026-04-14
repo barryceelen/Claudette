@@ -18,6 +18,7 @@ from .chat.chat_history import (
     ClaudetteImportChatHistoryCommand,
 )
 from .chat.chat_view import ClaudetteChatViewListener
+from .chat.stop_request import ClaudetteStopRequestCommand
 from .context.add_current_file import (
     ClaudetteContextAddCurrentFileCommand,
     ClaudetteContextRemoveCurrentFileCommand,
