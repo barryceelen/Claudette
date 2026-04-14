@@ -113,6 +113,8 @@
 		"rulers": false,
 		// If set_scratch is set to true, the chat view will be closed without
 		// prompting to save.
-		"set_scratch": true
+		"set_scratch": true,
+		// Show cost information after each response in the chat view
+		"show_cost": true
 	}
 }

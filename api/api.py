@@ -567,8 +567,17 @@ class ClaudetteClaudeAPI:
                         sublime.set_timeout(
                             lambda s=status_msg: sublime.status_message(s), 100
                         )
+                    usage_info = {
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                        "cost": current_cost,
+                        "session_cost": sess["cost"] if sess else current_cost,
+                    }
                     sublime.set_timeout(
-                        lambda: chunk_callback("", is_done=True), 0
+                        lambda u=usage_info: chunk_callback(
+                            "", is_done=True, usage_info=u
+                        ),
+                        0,
                     )
                     return
 
@@ -1024,9 +1033,18 @@ class ClaudetteClaudeAPI:
                                     100,
                                 )
 
-                                # Signal completion
+                                # Signal completion with usage info
+                                usage_info = {
+                                    "input_tokens": input_tokens,
+                                    "output_tokens": output_tokens,
+                                    "cost": current_cost,
+                                    "session_cost": session_cost,
+                                }
                                 sublime.set_timeout(
-                                    lambda: chunk_callback("", is_done=True), 0
+                                    lambda u=usage_info: chunk_callback(
+                                        "", is_done=True, usage_info=u
+                                    ),
+                                    0,
                                 )
 
                         except Exception:
