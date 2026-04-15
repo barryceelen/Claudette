@@ -96,7 +96,9 @@ def _read_file_with_encoding(path: str) -> Tuple[str, str]:
 
 
 def _write_file_with_encoding(path: str, text: str, encoding: str) -> None:
-    with open(path, "w", encoding=encoding, newline="") as f:
+    # Normalize utf-8-sig writes to utf-8 to avoid emitting BOM bytes.
+    write_encoding = "utf-8" if encoding == "utf-8-sig" else encoding
+    with open(path, "w", encoding=write_encoding, newline="") as f:
         f.write(text)
 
 
@@ -538,6 +540,9 @@ def execute_create(
                 return "Error: Could not create directory: {0}".format(
                     str(e)
                 ), True
+
+    if file_text.startswith("\ufeff"):
+        file_text = file_text[1:]
 
     try:
         with open(resolved, "w", encoding="utf-8", newline="") as f:
