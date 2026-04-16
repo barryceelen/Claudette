@@ -670,7 +670,12 @@ class ClaudetteClaudeAPI:
                         cache_read_tokens=cache_read_tokens,
                         cache_write_tokens=cache_write_tokens,
                     )
-                    web_search_cost = web_search_requests * (10.0 / 1000)
+                    cost_per_search = self.settings.get(
+                        "web_search_cost_per_search", 0.01
+                    )
+                    web_search_cost = (
+                        web_search_requests * cost_per_search
+                    )
                     current_cost += web_search_cost
                     sess = update_session_stats(
                         view_for_api,
@@ -680,21 +685,14 @@ class ClaudetteClaudeAPI:
                         web_search_requests,
                     )
                     if sess:
-                        cache_info = ""
-                        if usage.get("cache_read_input_tokens"):
-                            cache_info = " (cache read: {0:,})".format(
-                                usage.get("cache_read_input_tokens", 0)
-                            )
-                        elif usage.get("cache_write_input_tokens"):
-                            cache_info = " (cache write: {0:,})".format(
-                                usage.get("cache_write_input_tokens", 0)
-                            )
                         status_msg = format_status_message(
                             input_tokens,
                             output_tokens,
-                            cache_info,
                             current_cost,
                             sess["cost"],
+                            cache_read_tokens=cache_read_tokens,
+                            cache_write_tokens=cache_write_tokens,
+                            web_search_requests=web_search_requests,
                         )
                         sublime.set_timeout(
                             lambda s=status_msg: sublime.status_message(s), 100
@@ -757,8 +755,9 @@ class ClaudetteClaudeAPI:
         """
         input_tokens = 0
         output_tokens = 0
+        cache_read_tokens = 0
+        cache_write_tokens = 0
         web_search_requests = 0
-        cache_info = ""
 
         def handle_error(error_msg):
             sublime.set_timeout(
@@ -913,16 +912,6 @@ class ClaudetteClaudeAPI:
                                     cache_write_tokens = usage.get(
                                         "cache_write_input_tokens", 0
                                     )
-                                    if cache_read_tokens > 0:
-                                        cache_info = (
-                                            " (cache read: "
-                                            f"{cache_read_tokens:,})"
-                                        )
-                                    elif cache_write_tokens > 0:
-                                        cache_info = (
-                                            " (cache write: "
-                                            f"{cache_write_tokens:,})"
-                                        )
 
                             # Web search: track block and accumulate sources
                             # from start/delta/stop
@@ -1100,7 +1089,8 @@ class ClaudetteClaudeAPI:
                                                 _send_citation, 0
                                             )
 
-                            # Get final output tokens from message_delta
+                            # Get final output tokens and server tool
+                            # usage from message_delta
                             if (
                                 data.get("type") == "message_delta"
                                 and "usage" in data
@@ -1108,23 +1098,15 @@ class ClaudetteClaudeAPI:
                                 output_tokens = data["usage"].get(
                                     "output_tokens", 0
                                 )
-
-                            # Send token information at the end
-                            if data.get("type") == "message_stop":
-                                # Get cache token information
-                                usage = data.get("usage", {})
-                                cache_read_tokens = usage.get(
-                                    "cache_read_input_tokens", 0
-                                )
-                                cache_write_tokens = usage.get(
-                                    "cache_write_input_tokens", 0
-                                )
-                                server_tool_use = usage.get(
+                                server_tool_use = data["usage"].get(
                                     "server_tool_use", {}
                                 )
                                 web_search_requests = server_tool_use.get(
                                     "web_search_requests", 0
                                 )
+
+                            # Send token information at the end
+                            if data.get("type") == "message_stop":
 
                                 # Current response cost including cache and
                                 # web search
@@ -1136,8 +1118,11 @@ class ClaudetteClaudeAPI:
                                     cache_read_tokens=cache_read_tokens,
                                     cache_write_tokens=cache_write_tokens,
                                 )
-                                web_search_cost = web_search_requests * (
-                                    10.0 / 1000
+                                cost_per_search = self.settings.get(
+                                    "web_search_cost_per_search", 0.01
+                                )
+                                web_search_cost = (
+                                    web_search_requests * cost_per_search
                                 )
                                 current_cost += web_search_cost
 
@@ -1156,9 +1141,11 @@ class ClaudetteClaudeAPI:
                                 status_msg = format_status_message(
                                     input_tokens,
                                     output_tokens,
-                                    cache_info,
                                     current_cost,
                                     session_cost,
+                                    cache_read_tokens=cache_read_tokens,
+                                    cache_write_tokens=cache_write_tokens,
+                                    web_search_requests=web_search_requests,
                                 )
 
                                 sublime.set_timeout(

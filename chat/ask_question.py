@@ -1,4 +1,4 @@
-﻿import random
+import random
 import threading
 
 import sublime
@@ -255,7 +255,7 @@ class ClaudetteAskQuestionCommand(sublime_plugin.WindowCommand):
                     session_cost = usage_info.get("session_cost", 0.0)
                     cost_msg = (
                         "Tokens: {0:,} in, {1:,} out. "
-                        "Cost: ${2:.4f} (${3:.4f} session)\n"
+                        "Cost: ${2:.2f} (${3:.2f} session)\n"
                     ).format(input_tokens, output_tokens, cost, session_cost)
                     claudette_chat_status_message(
                         self.get_window(), cost_msg, "⚡️"

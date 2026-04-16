@@ -107,6 +107,8 @@
 	// https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool
 	"web_search": false,
 	"web_search_max_uses": 5,
+	// Cost per web search in dollars (as of April 2026). Anthropic bills $10 per 1,000 searches ($0.01 each).
+	"web_search_cost_per_search": 0.01,
 	// Optional: only include results from these domains (e.g. ["example.com", "docs.example.com"]).
 	// Do not set both web_search_allowed_domains and web_search_blocked_domains.
 	"web_search_allowed_domains": [],
