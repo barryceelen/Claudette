@@ -702,6 +702,12 @@ class ClaudetteClaudeAPI:
                         "output_tokens": output_tokens,
                         "cost": current_cost,
                         "session_cost": sess["cost"] if sess else current_cost,
+                        "web_search_requests": web_search_requests,
+                        "session_web_search_requests": (
+                            sess["web_search_requests"]
+                            if sess
+                            else web_search_requests
+                        ),
                     }
                     sublime.set_timeout(
                         lambda u=usage_info: chunk_callback(
@@ -1090,20 +1096,26 @@ class ClaudetteClaudeAPI:
                                             )
 
                             # Get final output tokens and server tool
-                            # usage from message_delta
+                            # usage from message_delta. The API may send
+                            # several message_delta events; later chunks
+                            # sometimes omit server_tool_use or fields — do
+                            # not reset accumulated values when absent.
                             if (
                                 data.get("type") == "message_delta"
                                 and "usage" in data
                             ):
-                                output_tokens = data["usage"].get(
-                                    "output_tokens", 0
-                                )
-                                server_tool_use = data["usage"].get(
-                                    "server_tool_use", {}
-                                )
-                                web_search_requests = server_tool_use.get(
-                                    "web_search_requests", 0
-                                )
+                                usage_delta = data["usage"]
+                                if "output_tokens" in usage_delta:
+                                    output_tokens = usage_delta[
+                                        "output_tokens"
+                                    ]
+                                if "server_tool_use" in usage_delta:
+                                    stu = usage_delta["server_tool_use"]
+                                    if isinstance(stu, dict):
+                                        web_search_requests = stu.get(
+                                            "web_search_requests",
+                                            web_search_requests,
+                                        )
 
                             # Send token information at the end
                             if data.get("type") == "message_stop":
@@ -1161,6 +1173,12 @@ class ClaudetteClaudeAPI:
                                     "output_tokens": output_tokens,
                                     "cost": current_cost,
                                     "session_cost": session_cost,
+                                    "web_search_requests": web_search_requests,
+                                    "session_web_search_requests": (
+                                        sess["web_search_requests"]
+                                        if sess
+                                        else web_search_requests
+                                    ),
                                 }
                                 sublime.set_timeout(
                                     lambda u=usage_info: chunk_callback(

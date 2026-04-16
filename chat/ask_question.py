@@ -253,10 +253,27 @@ class ClaudetteAskQuestionCommand(sublime_plugin.WindowCommand):
                     output_tokens = usage_info.get("output_tokens", 0)
                     cost = usage_info.get("cost", 0.0)
                     session_cost = usage_info.get("session_cost", 0.0)
+                    web_search_requests = usage_info.get(
+                        "web_search_requests", 0
+                    )
+                    session_web_search = usage_info.get(
+                        "session_web_search_requests", web_search_requests
+                    )
+                    web_search_part = ""
+                    if web_search_requests > 0:
+                        web_search_part = (
+                            " Web searches: {0} / {1}."
+                        ).format(web_search_requests, session_web_search)
                     cost_msg = (
-                        "Tokens: {0:,} in, {1:,} out. "
-                        "Cost: ${2:.2f} (${3:.2f} session)\n"
-                    ).format(input_tokens, output_tokens, cost, session_cost)
+                        "Tokens: {0:,} in, {1:,} out.{2} "
+                        "Cost: ${3:.2f} / ${4:.2f}\n"
+                    ).format(
+                        input_tokens,
+                        output_tokens,
+                        web_search_part,
+                        cost,
+                        session_cost,
+                    )
                     claudette_chat_status_message(
                         self.get_window(), cost_msg, "⚡️"
                     )
