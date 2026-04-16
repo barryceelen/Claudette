@@ -81,12 +81,25 @@ def _is_ipynb_path(resolved: str) -> bool:
 
 def _read_file_with_encoding(path: str) -> Tuple[str, str]:
     """
-    Read file text; detect encoding (UTF-8 BOM, UTF-8, UTF-8-sig, Latin-1).
+    Read file text; detect encoding (UTF-8 BOM, UTF-8, Latin-1).
 
     Latin-1 is a last resort that decodes every byte; use for write-back only
     when that path was chosen.
     """
-    for enc in ("utf-8-sig", "utf-8", "latin-1"):
+    # Only select utf-8-sig if a BOM is actually present. Using utf-8-sig as a
+    # blind first try would also "work" for plain UTF-8 files and then writes
+    # would re-save them with a BOM unexpectedly.
+    try:
+        with open(path, "rb") as f:
+            prefix = f.read(3)
+    except OSError:
+        prefix = b""
+
+    encodings = ("utf-8-sig", "utf-8", "latin-1")
+    if prefix != b"\xef\xbb\xbf":
+        encodings = ("utf-8", "latin-1")
+
+    for enc in encodings:
         try:
             with open(path, "r", encoding=enc) as f:
                 return f.read(), enc
