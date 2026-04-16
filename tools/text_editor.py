@@ -79,40 +79,60 @@ def _is_ipynb_path(resolved: str) -> bool:
     return resolved.lower().endswith(".ipynb")
 
 
-def _read_file_with_encoding(path: str) -> Tuple[str, str]:
+def _read_file_with_encoding(path: str) -> Tuple[str, str, str]:
     """
-    Read file text; detect encoding (UTF-8 BOM, UTF-8, Latin-1).
+    Read file text with a single binary read; detect encoding and line endings.
 
-    Latin-1 is a last resort that decodes every byte; use for write-back only
-    when that path was chosen.
+    Returns (text, encoding, line_ending) where:
+    - encoding is ``"utf-8-sig"`` (BOM present) or ``"utf-8"``.  Raises
+      on failure -- no silent Latin-1 fallback that could corrupt unknown
+      encodings.
+    - line_ending is ``"\\r\\n"`` or ``"\\n"``; preserved on write-back.
     """
-    # Only select utf-8-sig if a BOM is actually present. Using utf-8-sig as a
-    # blind first try would also "work" for plain UTF-8 files and then writes
-    # would re-save them with a BOM unexpectedly.
-    try:
-        with open(path, "rb") as f:
-            prefix = f.read(3)
-    except OSError:
-        prefix = b""
+    with open(path, "rb") as f:
+        raw = f.read()
 
-    encodings = ("utf-8-sig", "utf-8", "latin-1")
-    if prefix != b"\xef\xbb\xbf":
-        encodings = ("utf-8", "latin-1")
-
-    for enc in encodings:
+    # Detect BOM.
+    if raw[:3] == b"\xef\xbb\xbf":
+        text = raw[3:].decode("utf-8")
+        enc = "utf-8-sig"
+    else:
         try:
-            with open(path, "r", encoding=enc) as f:
-                return f.read(), enc
+            text = raw.decode("utf-8")
         except UnicodeDecodeError:
-            continue
-    raise OSError("Could not decode file as text.")
+            raise OSError(
+                "File is not valid UTF-8. Open it in an editor that "
+                "supports its encoding."
+            )
+        enc = "utf-8"
+
+    # Detect line endings before normalising.  Check for \r\n first
+    # since \n alone would also match the tail of \r\n.
+    line_ending = "\r\n" if b"\r\n" in raw else "\n"
+
+    # Normalise to \n internally so callers work with Unix line endings.
+    if line_ending == "\r\n":
+        text = text.replace("\r\n", "\n")
+
+    return text, enc, line_ending
 
 
-def _write_file_with_encoding(path: str, text: str, encoding: str) -> None:
-    # Normalize utf-8-sig writes to utf-8 to avoid emitting BOM bytes.
-    write_encoding = "utf-8" if encoding == "utf-8-sig" else encoding
-    with open(path, "w", encoding=write_encoding, newline="") as f:
-        f.write(text)
+def _write_file_with_encoding(
+    path: str, text: str, encoding: str, line_ending: str = "\n"
+) -> None:
+    """
+    Write text back to disk, preserving BOM and original line endings.
+    """
+    # Restore original line endings when they differ from the internal \n.
+    if line_ending == "\r\n":
+        text = text.replace("\n", "\r\n")
+
+    raw = text.encode("utf-8")
+    if encoding == "utf-8-sig":
+        raw = b"\xef\xbb\xbf" + raw
+
+    with open(path, "wb") as f:
+        f.write(raw)
 
 
 def _timestamp_key(path: str) -> str:
@@ -400,7 +420,7 @@ def execute_view(
         return _IPYNB_NOT_SUPPORTED, True
 
     try:
-        content, _enc = _read_file_with_encoding(resolved)
+        content, _enc, _le = _read_file_with_encoding(resolved)
     except OSError as e:
         return "Error: Could not read file: {0}".format(str(e)), True
 
@@ -477,7 +497,7 @@ def execute_str_replace(
         return stale, True
 
     try:
-        content, enc = _read_file_with_encoding(resolved)
+        content, enc, le = _read_file_with_encoding(resolved)
     except OSError as e:
         return "Error: Could not read file: {0}".format(str(e)), True
 
@@ -499,7 +519,7 @@ def execute_str_replace(
 
     new_content = content.replace(old_str, new_str, 1)
     try:
-        _write_file_with_encoding(resolved, new_content, enc)
+        _write_file_with_encoding(resolved, new_content, enc, le)
     except OSError as e:
         return "Error: Permission denied. Cannot write to file. {0}".format(
             str(e)
@@ -605,7 +625,7 @@ def execute_insert(
         return stale, True
 
     try:
-        raw, enc = _read_file_with_encoding(resolved)
+        raw, enc, le = _read_file_with_encoding(resolved)
     except OSError as e:
         return "Error: Could not read file: {0}".format(str(e)), True
 
@@ -634,7 +654,7 @@ def execute_insert(
         )
 
     try:
-        _write_file_with_encoding(resolved, new_content, enc)
+        _write_file_with_encoding(resolved, new_content, enc, le)
     except OSError as e:
         return "Error: Permission denied. Cannot write to file. {0}".format(
             str(e)
