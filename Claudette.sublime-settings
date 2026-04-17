@@ -69,19 +69,30 @@
 	"bash_tool_timeout": 120,
 	// Truncate combined stdout/stderr beyond this many bytes (UTF-8) with a notice.
 	"bash_tool_max_output_bytes": 100000,
-	// When true, show an OK/Cancel dialog before each bash command (restart is never prompted).
+	// When true, show an inline confirmation in the chat view before each bash command
+	// (restart is never prompted). Navigation: ↑/↓ to move, Enter to confirm, Esc to deny,
+	// number keys (1–9) jump to and select an option. Picking "Yes, and don't ask again for…"
+	// appends to bash_tool_allow_prefix (or bash_tool_allow_exact when no prefix can be
+	// extracted). Picking "No" also aborts any sibling tool calls in the same assistant message.
 	"bash_tool_confirm": true,
-	// When bash_tool_confirm is true, these read-only commands skip the confirmation dialog:
+	// Model used to extract a safe "allow prefix" from the bash command when the user picks
+	// "Yes, and don't ask again for…". Should be a small/fast Haiku-class model; the extractor
+	// is invoked once per unique command string (memoized per session) and falls back to an
+	// exact-match allow-rule when no prefix can be determined.
+	"bash_prefix_extractor_model": "claude-haiku-4-5",
+	// When bash_tool_confirm is true, these read-only commands skip the inline confirmation:
 	// git status, git diff, git log, git branch, pwd, tree, date, which.
 	"bash_tool_allow_safe_commands": true,
 	// When true, append each bash command to the chat as markdown (default false: avoids duplicate
 	// blocks when the model emits multiple identical tool_use calls in one response).
 	"bash_tool_echo_in_chat": false,
-	// Optional: commands that skip confirmation when bash_tool_confirm is true (exact match after
-	// normalizing whitespace). Unsafe patterns (| $() ``) still require confirmation.
+	// Optional: commands that skip the inline confirmation when bash_tool_confirm is true
+	// (exact match after normalizing whitespace). Unsafe patterns (| $() ``) still require
+	// confirmation. Populated automatically when you pick "Yes, and don't ask again for `<command>`".
 	"bash_tool_allow_exact": [],
-	// Optional: command string prefixes that skip confirmation when bash_tool_confirm is true.
-	// Example: ["git status", "npm test"]. Unsafe patterns still require confirmation.
+	// Optional: command string prefixes that skip the inline confirmation when bash_tool_confirm
+	// is true. Example: ["git status", "npm test"]. Unsafe patterns still require confirmation.
+	// Populated automatically when you pick "Yes, and don't ask again for `<prefix>` commands".
 	"bash_tool_allow_prefix": [],
 	// Extra banned command names (lowercase basenames) in addition to the built-in set (network
 	// clients, browsers, etc.). Example: ["docker"] to block the docker binary by first token.
@@ -100,12 +111,11 @@
 	// Optional: extra allowed directory roots for agent tools (text editor and bash; absolute paths).
 	// By default access to folders or files that are open in the sidebar is allowed.
 	"allowed_tool_roots": [],
-	// Maximum number of web searches per request when web_search is enabled (1–20).
 	// When true, Claude can search the web for up-to-date information. Only works
 	// with supported models (e.g. Claude Opus 4.6, 4.5, Sonnet 4.5, Haiku 4.5).
 	// Web search is billed at $10 per 1,000 searches in addition to token costs.
 	// https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool
-	"web_search": false,
+	// "web_search": false,
 	"web_search_max_uses": 5,
 	// Cost per web search in dollars (as of April 2026). Anthropic bills $10 per 1,000 searches ($0.01 each).
 	"web_search_cost_per_search": 0.01,

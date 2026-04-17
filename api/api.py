@@ -15,10 +15,12 @@ from ..constants import (
     DEFAULT_MODEL,
     DEFAULT_VERIFY_SSL,
     MAX_TOKENS,
+    PLUGIN_NAME,
     SETTINGS_FILE,
 )
 from ..statusbar.spinner import ClaudetteSpinner
 from ..tools.bash import BashSession, initial_bash_cwd, run_bash_tool
+from ..tools.confirmation_errors import ToolUseDeniedError
 from ..tools.text_editor import (
     NO_ALLOWED_ROOTS_MESSAGE,
     get_allowed_roots,
@@ -95,6 +97,77 @@ class ClaudetteClaudeAPI:
             return 1.0
         except (TypeError, ValueError):
             return 1.0
+
+    def _maybe_offer_web_search_enable(self, chat_view) -> bool:
+        """One-time prompt to turn on ``web_search`` globally when unset.
+
+        The prompt fires only when the user has *never* expressed an
+        opinion on ``web_search``. Detection relies on the default
+        ``Claudette.sublime-settings`` *not* defining the key — so
+        ``self.settings.has("web_search")`` is True iff the user wrote
+        a value into their overlay (via the prompt below or by hand).
+        Picking Yes / No writes the key; cancelling (view close,
+        timeout) writes nothing so the offer re-arms next request.
+
+        Returns True iff the user just accepted — in which case the
+        setting has been flipped on and every subsequent request will
+        include the hosted web_search tool without further confirmation
+        (to revoke, set ``"web_search": false`` in user settings).
+        """
+        # Respect any explicit user choice, true or false.
+        if self.settings.has("web_search"):
+            return False
+
+        view = getattr(chat_view, "view", chat_view)
+        if view is None:
+            return False
+        window = view.window()
+        if window is None:
+            return False
+
+        from ..chat.chat_view import ClaudetteChatView
+        from ..chat.confirmation import (
+            ConfirmationOption,
+            ConfirmationRequest,
+        )
+
+        mgr = ClaudetteChatView._instances.get(window.id())
+        if mgr is None or mgr.confirmation is None:
+            return False
+
+        request = ConfirmationRequest(
+            title="Enable Web Search?",
+            icon="🌍",
+            message_markdown=(
+                "Claudette can give Claude access to Anthropic's hosted "
+                "web search tool so it can look up current information. "
+                "This setting applies globally to all future chats and "
+                "can be changed later in `Claudette.sublime-settings`."
+            ),
+            question="Enable web search?",
+            options=[
+                ConfirmationOption(
+                    id="yes", label="Yes, enable web search"
+                ),
+                ConfirmationOption(id="no", label="No"),
+            ],
+            cancel_index=1,
+        )
+        result = mgr.request_confirmation(
+            request, view_id=view.id(), spinner=self.spinner
+        )
+
+        # Only persist a choice when the user actually picked an option.
+        # ``RESULT_CANCELLED`` means the view was closed or the prompt
+        # timed out before they answered — leave the setting absent so
+        # the offer re-arms on the next request. Esc routes to
+        # ``cancel_index`` (= explicit "No") and comes back as ``"no"``.
+        if result not in ("yes", "no"):
+            return False
+
+        self.settings.set("web_search", result == "yes")
+        sublime.save_settings(SETTINGS_FILE)
+        return result == "yes"
 
     @staticmethod
     def _message_has_content(msg):
@@ -344,9 +417,16 @@ class ClaudetteClaudeAPI:
             )
             return
 
+        self._maybe_offer_web_search_enable(chat_view)
         web_search_tool = build_web_search_tool_def(self.settings)
         if web_search_tool:
             tools_list.append(web_search_tool)
+        print(
+            "{0} agent loop tools: {1}".format(
+                PLUGIN_NAME,
+                [t.get("name", t.get("type", "?")) for t in tools_list],
+            )
+        )
 
         # chat_view may be sublime View or ClaudetteChatView (.view,
         # .set_tool_status, .clear_tool_status).
@@ -390,6 +470,10 @@ class ClaudetteClaudeAPI:
 
         try:
             self.spinner.start("Fetching response")
+            # Let the chat view's ConfirmationManager pause the spinner while
+            # an inline prompt is awaiting input, and resume it afterwards.
+            if chat_view_for_status is not None:
+                chat_view_for_status.active_spinner = self.spinner
             current_messages = list(filtered)
             # Paths read in this agent loop (realpath -> mtime) for write safety.
             read_file_timestamps = {}
@@ -474,42 +558,67 @@ class ClaudetteClaudeAPI:
                     tool_results = []
                     assistant_content = []
                     bash_chat_echo_seen = set()
+                    # Per-message denial flag: once a tool_use is rejected by
+                    # the user, every remaining tool_use in this assistant
+                    # message is marked aborted rather than executed — matches
+                    # Claude Code's ``abortController.abort()`` behavior.
+                    denied = False
                     for block in content:
                         if not isinstance(block, dict):
                             continue
                         if block.get("type") == "text" and block.get("text"):
                             assistant_content.append(block)
-                        elif block.get("type") == "tool_use":
-                            assistant_content.append(block)
-                            inp = block.get("input", {})
-                            tool_name = block.get("name", "") or ""
+                            continue
+                        if block.get("type") != "tool_use":
+                            continue
+                        assistant_content.append(block)
+                        if denied:
+                            # Sibling abort: every remaining tool_use gets a
+                            # synthetic is_error tool_result so the Anthropic
+                            # API still sees one tool_result per tool_use.
+                            tool_results.append(
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": block.get("id", ""),
+                                    "content": (
+                                        "Tool use aborted: a sibling tool "
+                                        "call was denied by the user."
+                                    ),
+                                    "is_error": True,
+                                }
+                            )
+                            continue
 
-                            if tool_name == "bash":
-                                cmd_preview = inp.get("command", "")
-                                if inp.get("restart"):
-                                    status_label = "Restarting bash…"
+                        inp = block.get("input", {})
+                        tool_name = block.get("name", "") or ""
+
+                        if tool_name == "bash":
+                            cmd_preview = inp.get("command", "")
+                            if inp.get("restart"):
+                                status_label = "Restarting bash…"
+                            else:
+                                if isinstance(cmd_preview, str):
+                                    prev = cmd_preview.replace("\n", " ")
+                                    if len(prev) > 56:
+                                        prev = prev[:53] + "…"
                                 else:
-                                    if isinstance(cmd_preview, str):
-                                        prev = cmd_preview.replace("\n", " ")
-                                        if len(prev) > 56:
-                                            prev = prev[:53] + "…"
-                                    else:
-                                        prev = "bash"
-                                    status_label = "Bash: {0}".format(prev)
-                                sublime.set_timeout(
-                                    lambda s=status_label: update_status(s), 0
-                                )
-                                if bash_session is None:
-                                    result = {
-                                        "type": "tool_result",
-                                        "tool_use_id": block.get("id", ""),
-                                        "content": (
-                                            "Error: Bash tool session is not "
-                                            "available."
-                                        ),
-                                        "is_error": True,
-                                    }
-                                else:
+                                    prev = "bash"
+                                status_label = "Bash: {0}".format(prev)
+                            sublime.set_timeout(
+                                lambda s=status_label: update_status(s), 0
+                            )
+                            if bash_session is None:
+                                result = {
+                                    "type": "tool_result",
+                                    "tool_use_id": block.get("id", ""),
+                                    "content": (
+                                        "Error: Bash tool session is not "
+                                        "available."
+                                    ),
+                                    "is_error": True,
+                                }
+                            else:
+                                try:
                                     result = run_bash_tool(
                                         block.get("id", ""),
                                         inp,
@@ -517,78 +626,96 @@ class ClaudetteClaudeAPI:
                                         chat_view=chat_view_for_status,
                                         chat_echo_seen=bash_chat_echo_seen,
                                     )
-                                tool_results.append(result)
-                                continue
+                                except ToolUseDeniedError as deny:
+                                    denied = True
+                                    tool_results.append(
+                                        {
+                                            "type": "tool_result",
+                                            "tool_use_id": (
+                                                deny.tool_use_id
+                                                or block.get("id", "")
+                                            ),
+                                            "content": (
+                                                deny.message
+                                                or "Tool use denied by user."
+                                            ),
+                                            "is_error": True,
+                                        }
+                                    )
+                                    continue
+                            tool_results.append(result)
+                            continue
 
-                            if tool_name not in (
-                                "str_replace_editor",
-                                "str_replace_based_edit_tool",
-                            ):
-                                tool_results.append(
-                                    {
-                                        "type": "tool_result",
-                                        "tool_use_id": block.get("id", ""),
-                                        "content": (
-                                            "Error: Unknown tool '{0}'.".format(
-                                                tool_name
-                                            )
-                                        ),
-                                        "is_error": True,
-                                    }
-                                )
-                                continue
-
-                            raw_path = inp.get("path", "") or "file"
-                            cmd = inp.get("command", "view")
-                            action = {
-                                "view": "Reading",
-                                "str_replace": "Editing",
-                                "create": "Creating",
-                                "insert": "Editing",
-                            }.get(cmd, "Processing")
-                            context_files = None
-                            if view_for_api and hasattr(
-                                view_for_api, "settings"
-                            ):
-                                context_files = view_for_api.settings().get(
-                                    "claudette_context_files"
-                                )
-                            allowed_roots = get_allowed_roots(window, settings)
-                            resolved, _ = resolve_path(
-                                raw_path,
-                                allowed_roots,
-                                context_files=context_files,
-                                window=window,
-                            )
-                            if resolved and allowed_roots:
-                                try:
-                                    for root in allowed_roots:
-                                        if (
-                                            os.path.commonpath(
-                                                [root, resolved]
-                                            )
-                                            == root
-                                        ):
-                                            display_path = os.path.relpath(
-                                                resolved, root
-                                            )
-                                            break
-                                    else:
-                                        display_path = os.path.basename(
-                                            resolved
+                        if tool_name not in (
+                            "str_replace_editor",
+                            "str_replace_based_edit_tool",
+                        ):
+                            tool_results.append(
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": block.get("id", ""),
+                                    "content": (
+                                        "Error: Unknown tool '{0}'.".format(
+                                            tool_name
                                         )
-                                except ValueError:
-                                    display_path = os.path.basename(resolved)
-                            else:
-                                display_path = (
-                                    os.path.basename(raw_path) or "file"
-                                )
-                            status_label = "{0} {1}".format(
-                                action, display_path
+                                    ),
+                                    "is_error": True,
+                                }
                             )
-                            sublime.set_timeout(
-                                lambda s=status_label: update_status(s), 0
+                            continue
+
+                        raw_path = inp.get("path", "") or "file"
+                        cmd = inp.get("command", "view")
+                        action = {
+                            "view": "Reading",
+                            "str_replace": "Editing",
+                            "create": "Creating",
+                            "insert": "Editing",
+                        }.get(cmd, "Processing")
+                        context_files = None
+                        if view_for_api and hasattr(
+                            view_for_api, "settings"
+                        ):
+                            context_files = view_for_api.settings().get(
+                                "claudette_context_files"
                             )
+                        allowed_roots = get_allowed_roots(window, settings)
+                        resolved, _ = resolve_path(
+                            raw_path,
+                            allowed_roots,
+                            context_files=context_files,
+                            window=window,
+                        )
+                        if resolved and allowed_roots:
+                            try:
+                                for root in allowed_roots:
+                                    if (
+                                        os.path.commonpath(
+                                            [root, resolved]
+                                        )
+                                        == root
+                                    ):
+                                        display_path = os.path.relpath(
+                                            resolved, root
+                                        )
+                                        break
+                                else:
+                                    display_path = os.path.basename(
+                                        resolved
+                                    )
+                            except ValueError:
+                                display_path = os.path.basename(resolved)
+                        else:
+                            display_path = (
+                                os.path.basename(raw_path) or "file"
+                            )
+                        status_label = "{0} {1}".format(
+                            action, display_path
+                        )
+                        sublime.set_timeout(
+                            lambda s=status_label: update_status(s), 0
+                        )
+                        try:
                             result = run_text_editor_tool(
                                 block.get("id", ""),
                                 tool_name,
@@ -599,9 +726,26 @@ class ClaudetteClaudeAPI:
                                 context_files=context_files,
                                 read_file_timestamps=read_file_timestamps,
                             )
-                            tool_results.append(result)
-                            # Check for cancellation after each tool execution
-                            check_cancelled()
+                        except ToolUseDeniedError as deny:
+                            denied = True
+                            tool_results.append(
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": (
+                                        deny.tool_use_id
+                                        or block.get("id", "")
+                                    ),
+                                    "content": (
+                                        deny.message
+                                        or "Tool use denied by user."
+                                    ),
+                                    "is_error": True,
+                                }
+                            )
+                            continue
+                        tool_results.append(result)
+                        # Check for cancellation after each tool execution
+                        check_cancelled()
 
                     user_content = tool_results
                     current_messages.append(
@@ -749,6 +893,8 @@ class ClaudetteClaudeAPI:
         finally:
             if bash_session is not None:
                 bash_session.close()
+            if chat_view_for_status is not None:
+                chat_view_for_status.active_spinner = None
 
     def stream_response(
         self, chunk_callback, messages, chat_view=None, cancellation_token=None
@@ -810,6 +956,7 @@ class ClaudetteClaudeAPI:
                 "temperature": self.get_valid_temperature(self.temperature),
             }
 
+            self._maybe_offer_web_search_enable(chat_view)
             web_search_tool = build_web_search_tool_def(self.settings)
             if web_search_tool:
                 data["tools"] = [web_search_tool]

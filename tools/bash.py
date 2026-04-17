@@ -17,9 +17,14 @@ import tempfile
 import threading
 import time
 import uuid
-from typing import List, Optional, Set, Tuple, Union
+from typing import List, Optional, Set, Tuple
 
 import sublime
+
+from ..constants import DEFAULT_BASE_URL, DEFAULT_VERIFY_SSL, SETTINGS_FILE
+from ..utils import claudette_get_api_key_value
+from .bash_prefix import extract_bash_allow_prefix
+from .confirmation_errors import ToolUseDeniedError
 
 
 # Default banned first tokens.
@@ -841,52 +846,173 @@ class BashSession:
         return output, is_error
 
 
-def _ask_permission_sync(command: str, cwd: str) -> bool:
+def _format_command_for_display(command: str) -> str:
+    """Truncate a command for the inline prompt so huge pastes stay readable."""
+    if len(command) > 2000:
+        return command[:1997] + "..."
+    return command
+
+
+def _append_unique(settings, key: str, value: str) -> None:
+    """Append ``value`` to a list-valued setting if not already present, and save.
+
+    Called from worker threads when the user picks "don't ask again"; settings
+    writes on Sublime are safe from non-main threads as long as we also call
+    ``save_settings`` so the change persists across restarts.
     """
-    Show Sublime's OK/Cancel dialog for one command (main thread only).
+    current = settings.get(key)
+    if not isinstance(current, list):
+        current = []
+    trimmed = value.strip()
+    if not trimmed:
+        return
+    for existing in current:
+        if isinstance(existing, str) and existing.strip() == trimmed:
+            return
+    updated = list(current) + [trimmed]
+    settings.set(key, updated)
+    sublime.save_settings(SETTINGS_FILE)
 
-    Sublime UI must run on the main thread; truncates long commands and shows
-    cwd so the user knows where the shell will run. Returns whether Allow was
-    chosen.
+
+def _build_bash_confirmation_options(prefix_info: dict, command: str):
+    """Build the dynamic option list for the bash confirmation prompt.
+
+    Matches CC's ``showDontAskAgainOption`` logic: the middle "don't ask again"
+    entry only appears when the extractor returned a usable prefix or when the
+    command is safe enough to permit an exact-match allow. For unsafe
+    compounds or command-injection cases the user only sees Yes/No.
     """
-    display_cmd = command
-    if len(display_cmd) > 500:
-        display_cmd = display_cmd[:497] + "..."
+    from ..chat.confirmation import ConfirmationOption
 
-    cwd_line = ""
-    if cwd:
-        cwd_display = cwd
-        if len(cwd_display) > 120:
-            cwd_display = "…" + cwd_display[-116:]
-        cwd_line = "\n\nWorking directory:\n{0}".format(cwd_display)
+    options = [ConfirmationOption(id="yes", label="Yes")]
 
-    return sublime.ok_cancel_dialog(
-        "Claude wants to run this command:\n\n{0}{1}".format(
-            display_cmd, cwd_line
+    kind = prefix_info.get("kind")
+    prefix_value = prefix_info.get("value")
+    if kind == "prefix" and isinstance(prefix_value, str) and prefix_value:
+        options.append(
+            ConfirmationOption(
+                id="yes_always_prefix",
+                label="Yes, and don't ask again for `{0}` commands".format(
+                    prefix_value
+                ),
+            )
+        )
+    elif kind == "full":
+        display_cmd = command.strip()
+        if len(display_cmd) > 80:
+            display_cmd = display_cmd[:77] + "..."
+        options.append(
+            ConfirmationOption(
+                id="yes_always_full",
+                label="Yes, and don't ask again for `{0}`".format(display_cmd),
+            )
+        )
+
+    options.append(
+        ConfirmationOption(
+            id="no",
+            label="No, and tell Claude what to do differently",
+        )
+    )
+    return options
+
+
+def _get_prefix_extractor_config(settings) -> dict:
+    """Gather the network/model config the prefix extractor needs.
+
+    The extractor piggybacks on the same Anthropic credentials/base_url the
+    main chat uses so self-hosted gateways and custom SSL settings apply.
+    """
+    return {
+        "api_key": claudette_get_api_key_value(),
+        "base_url": settings.get("base_url", DEFAULT_BASE_URL),
+        "model": settings.get(
+            "bash_prefix_extractor_model", "claude-haiku-4-5"
         ),
-        "Allow",
+        "verify_ssl": bool(settings.get("verify_ssl", DEFAULT_VERIFY_SSL)),
+    }
+
+
+def _prompt_user_for_bash(
+    command: str,
+    tool_use_id: str,
+    session: "BashSession",
+    chat_view,
+) -> None:
+    """Ask the user to approve ``command`` via the inline chat prompt.
+
+    The pipeline mirrors Claude Code:
+      1. Show a tool status while we call the prefix extractor synchronously
+         (network hop); the extractor is memoized per command.
+      2. Build a ConfirmationRequest whose options adapt to the extractor's
+         verdict (hide "don't ask again" for unsafe/injection cases).
+      3. Block the worker thread on the chat view's ConfirmationManager.
+      4. Persist "don't ask again" choices to settings, then return; on deny
+         raise ``ToolUseDeniedError`` so the API loop can cancel sibling tool
+         calls and report the denial to Claude.
+    """
+    from ..chat.confirmation import (
+        ConfirmationRequest,
+        RESULT_CANCELLED,
     )
 
+    settings = session._settings
 
-def _ask_permission(command: str, cwd: str) -> Union[bool, None]:
-    """
-    Marshal the permission dialog onto the main thread from API worker threads.
+    extractor_cfg = _get_prefix_extractor_config(settings)
+    if chat_view is not None:
+        sublime.set_timeout(
+            lambda: chat_view.set_tool_status("Checking command..."), 0
+        )
+    try:
+        prefix_info = extract_bash_allow_prefix(
+            command,
+            api_key=extractor_cfg["api_key"],
+            base_url=extractor_cfg["base_url"],
+            model=extractor_cfg["model"],
+            verify_ssl=extractor_cfg["verify_ssl"],
+        )
+    finally:
+        if chat_view is not None:
+            sublime.set_timeout(
+                lambda: chat_view.clear_tool_status(), 0
+            )
 
-    The non-streaming tool loop runs off the UI thread; ``set_timeout`` plus an
-    ``Event`` bridges to ``_ask_permission_sync``. ``None`` means the wait
-    exceeded one hour (treated as failure upstream).
-    """
-    result = [False]
-    event = threading.Event()
+    options = _build_bash_confirmation_options(prefix_info, command)
+    message_markdown = (
+        "Claude wants to run the following bash command:\n\n"
+        "```bash\n{0}\n```".format(_format_command_for_display(command))
+    )
+    request = ConfirmationRequest(
+        title="Bash",
+        icon="⚪️",
+        message_markdown=message_markdown,
+        question="Do you want to proceed?",
+        options=options,
+    )
 
-    def ask_on_main():
-        result[0] = _ask_permission_sync(command, cwd)
-        event.set()
+    if chat_view is None or not hasattr(chat_view, "request_confirmation"):
+        raise ToolUseDeniedError(
+            "Command execution denied: no chat view available for "
+            "confirmation. Claude should ask what to do differently.",
+            tool_use_id=tool_use_id,
+        )
 
-    sublime.set_timeout(ask_on_main, 0)
-    if not event.wait(timeout=3600):
-        return None
-    return result[0]
+    result = chat_view.request_confirmation(request)
+    if result == RESULT_CANCELLED or result == "no":
+        raise ToolUseDeniedError(
+            "Command execution denied by user. Claude should ask what "
+            "to do differently.",
+            tool_use_id=tool_use_id,
+        )
+    if result == "yes_always_prefix":
+        prefix_value = prefix_info.get("value")
+        if isinstance(prefix_value, str) and prefix_value.strip():
+            _append_unique(
+                settings, "bash_tool_allow_prefix", prefix_value.strip()
+            )
+    elif result == "yes_always_full":
+        _append_unique(settings, "bash_tool_allow_exact", command)
+    # "yes" (and anything else) falls through to running the command.
 
 
 def _display_command_in_chat(
@@ -993,24 +1119,7 @@ def run_bash_tool(
     settings = session._settings
     if settings.get("bash_tool_confirm", True):
         if _should_prompt_for_command(command, settings):
-            decision = _ask_permission(command, session._cwd)
-            if decision is None:
-                return {
-                    "type": "tool_result",
-                    "tool_use_id": tool_use_id,
-                    "content": (
-                        "Error: Confirmation dialog did not complete (timed out "
-                        "after 1 hour)."
-                    ),
-                    "is_error": True,
-                }
-            if not decision:
-                return {
-                    "type": "tool_result",
-                    "tool_use_id": tool_use_id,
-                    "content": "Command execution denied by user.",
-                    "is_error": True,
-                }
+            _prompt_user_for_bash(command, tool_use_id, session, chat_view)
 
     if settings.get("bash_tool_echo_in_chat", False):
         _display_command_in_chat(chat_view, command, seen=chat_echo_seen)
