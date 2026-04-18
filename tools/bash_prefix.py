@@ -1,9 +1,9 @@
 """
 LLM-backed bash command prefix extraction for "don't ask again" rules.
 
-Ports Claude Code's approach from ``src/utils/commands.ts``: before the inline
-confirmation prompt is shown, a small/fast Haiku model classifies the command
-into one of three shapes so the user sees the right "don't ask again" option:
+Before the inline confirmation prompt is shown, a small/fast Haiku model
+classifies the command into one of three shapes so the user sees the right
+"don't ask again" option:
 
 - ``{"kind": "prefix", "value": "git commit"}`` — we can safely skip approval
   for any command that starts with this prefix (e.g. ``git commit -m "x"``).
@@ -40,7 +40,7 @@ _SYSTEM_PROMPT = (
 
 _USER_PROMPT_TEMPLATE = (
     "<policy_spec>\n"
-    "# Claude Code Bash command prefix detection\n\n"
+    "# Claudette Bash command prefix detection\n\n"
     "This document defines risk levels for actions that the Claude agent "
     "may take. This classification system is part of a broader safety "
     "framework and is used to determine when additional user confirmation "
