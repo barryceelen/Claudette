@@ -139,6 +139,12 @@ def parse_web_search_items(items):
 def format_search_results(source_lines):
     """Format web search source lines into a markdown section.
 
+    The heading is emitted as an h2 so Sublime Text folds the block as a
+    single collapsible section at the end of the assistant response. The
+    blank-line separator before the heading is inserted by the streaming
+    response handler (see ``_ensure_blank_line``) based on the view's
+    current tail, so this format does not prepend its own newline.
+
     Args:
         source_lines: Markdown link lines (e.g. ["- [Title](url)", ...]).
 
@@ -147,4 +153,4 @@ def format_search_results(source_lines):
     """
     if not source_lines:
         return ""
-    return "### Search Results\n\n" + "\n".join(source_lines) + "\n\n"
+    return "## Sources\n\n" + "\n".join(source_lines) + "\n"
