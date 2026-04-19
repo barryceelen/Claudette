@@ -4,13 +4,15 @@ Text editor tool executor for Anthropic's text editor tool.
 Resolves paths against allowed roots (e.g. project folders), runs
 view/str_replace/create/insert, and returns tool_result payloads.
 
-Security and safety: symlink-safe containment (``ensure_under_root``),
-read-before-write mtime tracking when ``read_file_timestamps`` is passed,
-encoding detection for read/write round-trips, and rejection of ``.ipynb``
+Safety: symlink-safe containment (``ensure_under_root``), read-before-write
+mtime tracking when ``read_file_timestamps`` is passed, encoding detection
+for read/write round-trips, atomic writes via sibling tempfile + rename so
+a crash mid-write cannot truncate the target, and rejection of ``.ipynb``
 files (use a dedicated notebook editor).
 """
 
 import os
+import tempfile
 from typing import Any, Dict, List, Optional, Tuple
 
 _IPYNB_NOT_SUPPORTED = (
@@ -84,15 +86,19 @@ def _read_file_with_encoding(path: str) -> Tuple[str, str, str]:
     Read file text with a single binary read; detect encoding and line endings.
 
     Returns (text, encoding, line_ending) where:
-    - encoding is ``"utf-8-sig"`` (BOM present) or ``"utf-8"``.  Raises
-      on failure -- no silent Latin-1 fallback that could corrupt unknown
+
+    - ``encoding`` is ``"utf-8-sig"`` (BOM present) or ``"utf-8"``.  Raises
+      on failure — no silent Latin-1 fallback that could corrupt unknown
       encodings.
-    - line_ending is ``"\\r\\n"`` or ``"\\n"``; preserved on write-back.
+    - ``line_ending`` is ``"\\r\\n"`` only when the file is *purely* CRLF
+      (every ``\\n`` is preceded by ``\\r``), else ``"\\n"``.  Mixed files
+      degrade to LF so the writer does not silently flip their bare LF
+      lines to CRLF.  The returned ``text`` is always LF-internal so string
+      operations do not trip over stray ``\\r`` on mixed files.
     """
     with open(path, "rb") as f:
         raw = f.read()
 
-    # Detect BOM.
     if raw[:3] == b"\xef\xbb\xbf":
         text = raw[3:].decode("utf-8")
         enc = "utf-8-sig"
@@ -106,24 +112,77 @@ def _read_file_with_encoding(path: str) -> Tuple[str, str, str]:
             )
         enc = "utf-8"
 
-    # Detect line endings before normalising.  Check for \r\n first
-    # since \n alone would also match the tail of \r\n.
-    line_ending = "\r\n" if b"\r\n" in raw else "\n"
+    # Only treat the file as CRLF-endowed when every newline is paired;
+    # mixed files (one or more bare ``\n``) get LF on write-back instead
+    # of silently converting those lines to CRLF.
+    crlf_count = raw.count(b"\r\n")
+    if crlf_count > 0 and raw.count(b"\n") == crlf_count:
+        line_ending = "\r\n"
+    else:
+        line_ending = "\n"
 
-    # Normalise to \n internally so callers work with Unix line endings.
-    if line_ending == "\r\n":
+    # Normalize to LF internally so downstream string ops see clean lines
+    # even if the file had stray ``\r\n`` sequences.
+    if b"\r\n" in raw:
         text = text.replace("\r\n", "\n")
 
     return text, enc, line_ending
+
+
+def _atomic_write_bytes(path: str, data: bytes) -> None:
+    """Write ``data`` to ``path`` atomically via a sibling tempfile + rename.
+
+    Creates a tempfile in the same directory as ``path`` so ``os.replace``
+    is a same-filesystem atomic rename. Preserves the original file's
+    permission bits if it existed; new files fall back to ``0o644``.  On
+    any error the tempfile is unlinked and the exception propagates.
+
+    Why: the previous implementation used ``open(path, "wb")``, which
+    truncates immediately — a crash or power loss between truncation and
+    the end of ``f.write()`` leaves the user's file empty or partial. An
+    atomic rename keeps the old contents intact until the new version is
+    fully on disk.
+    """
+    directory = os.path.dirname(path) or "."
+
+    orig_mode: Optional[int] = None
+    try:
+        orig_mode = os.stat(path).st_mode & 0o777
+    except OSError:
+        pass
+
+    fd, tmp = tempfile.mkstemp(
+        prefix=".claudette-" + os.path.basename(path) + ".",
+        dir=directory,
+    )
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+            f.flush()
+            try:
+                os.fsync(f.fileno())
+            except OSError:
+                pass
+        target_mode = orig_mode if orig_mode is not None else 0o644
+        try:
+            os.chmod(tmp, target_mode)
+        except OSError:
+            pass
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _write_file_with_encoding(
     path: str, text: str, encoding: str, line_ending: str = "\n"
 ) -> None:
     """
-    Write text back to disk, preserving BOM and original line endings.
+    Write text back to disk atomically, preserving BOM and line endings.
     """
-    # Restore original line endings when they differ from the internal \n.
     if line_ending == "\r\n":
         text = text.replace("\n", "\r\n")
 
@@ -131,8 +190,7 @@ def _write_file_with_encoding(
     if encoding == "utf-8-sig":
         raw = b"\xef\xbb\xbf" + raw
 
-    with open(path, "wb") as f:
-        f.write(raw)
+    _atomic_write_bytes(path, raw)
 
 
 def _timestamp_key(path: str) -> str:
@@ -283,11 +341,12 @@ def resolve_path(
 
     normalized = os.path.normpath(path)
 
-    if (
-        normalized.startswith("..")
-        or "/.." in normalized
-        or "\\.." in normalized
-    ):
+    # After ``normpath`` any inner ``foo/../bar`` segments have been
+    # collapsed; a relative path escapes its join-root iff its first
+    # component is literally ``..``. We split on both ``/`` and ``\`` so
+    # a Windows-style payload on Unix (``..\\x``) is still caught.
+    first_component = normalized.split("/", 1)[0].split("\\", 1)[0]
+    if first_component == "..":
         return None, "Error: Path traversal is not allowed."
 
     # If path is just a filename (no directory), check with priority:
@@ -405,13 +464,19 @@ def execute_view(
 
     if os.path.isdir(resolved):
         try:
-            names = sorted(os.listdir(resolved))
-            lines = [
-                "{0}: {1}".format(i + 1, name) for i, name in enumerate(names)
-            ]
-            return "\n".join(lines), False
+            with os.scandir(resolved) as it:
+                entries = sorted(it, key=lambda e: e.name)
         except OSError as e:
             return "Error: Could not list directory: {0}".format(str(e)), True
+        out_lines = []
+        for i, entry in enumerate(entries, start=1):
+            try:
+                is_dir = entry.is_dir()
+            except OSError:
+                is_dir = False
+            suffix = "/" if is_dir else ""
+            out_lines.append("{0}: {1}{2}".format(i, entry.name, suffix))
+        return "\n".join(out_lines), False
 
     if not os.path.isfile(resolved):
         return "Error: File not found", True
@@ -425,16 +490,23 @@ def execute_view(
         return "Error: Could not read file: {0}".format(str(e)), True
 
     if view_range and isinstance(view_range, list) and len(view_range) >= 2:
-        start_line = max(
-            1, int(view_range[0]) if view_range[0] is not None else 1
-        )
-        end_line = view_range[1]
+        try:
+            start_raw = view_range[0]
+            end_raw = view_range[1]
+            start_line = 1 if start_raw is None else int(start_raw)
+            end_line = -1 if end_raw is None else int(end_raw)
+        except (TypeError, ValueError):
+            return (
+                "Error: Invalid view_range (start and end must be integers).",
+                True,
+            )
+        start_line = max(1, start_line)
         lines = content.splitlines()
         total = len(lines)
         if end_line == -1:
             end_line = total
         else:
-            end_line = min(total, max(1, int(end_line)))
+            end_line = min(total, max(1, end_line))
         if start_line > end_line or start_line > total:
             return "Error: Invalid view_range", True
         content = "\n".join(
@@ -577,9 +649,14 @@ def execute_create(
     if file_text.startswith("\ufeff"):
         file_text = file_text[1:]
 
+    # Use ``"x"`` (exclusive create) so the create fails atomically if the
+    # file was created between the ``os.path.exists`` check above and this
+    # write — safer than plain ``"w"`` which would clobber the racer.
     try:
-        with open(resolved, "w", encoding="utf-8", newline="") as f:
+        with open(resolved, "x", encoding="utf-8", newline="") as f:
             f.write(file_text)
+    except FileExistsError:
+        return "Error: File already exists.", True
     except OSError as e:
         return "Error: Permission denied. Cannot write to file. {0}".format(
             str(e)
@@ -633,7 +710,14 @@ def execute_insert(
     if not lines and raw:
         lines = [raw]
 
-    insert_line = max(0, int(insert_line))
+    try:
+        insert_line = int(insert_line)
+    except (TypeError, ValueError):
+        return (
+            "Error: Invalid insert_line (must be an integer).",
+            True,
+        )
+    insert_line = max(0, insert_line)
     if insert_line > len(lines):
         insert_line = len(lines)
 

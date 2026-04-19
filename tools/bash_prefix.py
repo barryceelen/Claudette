@@ -23,6 +23,7 @@ the life of the Sublime process.
 import json
 import ssl
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -109,6 +110,46 @@ _DEFAULT_MODEL = "claude-haiku-4-5"
 _cache = {}
 _cache_lock = threading.Lock()
 
+# Rate-limit console prints of extractor failures. A dead endpoint would
+# otherwise log one line every time the user runs a shell command. We emit
+# at most one message per error-kind per minute and include a count of
+# suppressed prints on the next emission so nothing is silently lost.
+_LOG_COOLDOWN_SECONDS = 60.0
+_log_state_lock = threading.Lock()
+_log_state = {}  # kind -> [last_print_monotonic, suppressed_count]
+
+
+def _log_extractor_error(kind: str, err) -> None:
+    now = time.monotonic()
+    with _log_state_lock:
+        entry = _log_state.get(kind)
+        if entry is None:
+            _log_state[kind] = [now, 0]
+            should_print = True
+            suppressed = 0
+        else:
+            last, suppressed = entry
+            if now - last >= _LOG_COOLDOWN_SECONDS:
+                entry[0] = now
+                entry[1] = 0
+                should_print = True
+            else:
+                entry[1] += 1
+                should_print = False
+                suppressed = 0
+    if not should_print:
+        return
+    suffix = (
+        " ({0} similar message(s) suppressed)".format(suppressed)
+        if suppressed
+        else ""
+    )
+    print(
+        "{0} bash prefix extractor: {1} error ({2}){3}".format(
+            PLUGIN_NAME, kind, err, suffix
+        )
+    )
+
 
 def _is_unsafe_shell_pattern(command: str) -> bool:
     """Cheap check for shell metacharacters that can smuggle extra commands.
@@ -175,9 +216,15 @@ def _query_haiku(
             }
         ],
     }
+    # ``urljoin`` strips the last path segment of ``base_url`` when it lacks
+    # a trailing slash, so a proxy base like ``https://proxy/claude`` would
+    # resolve to ``https://proxy/messages``. Ensure the slash before joining.
+    normalized_base = (
+        base_url if base_url.endswith("/") else base_url + "/"
+    )
     try:
         req = urllib.request.Request(
-            urllib.parse.urljoin(base_url, "messages"),
+            urllib.parse.urljoin(normalized_base, "messages"),
             data=json.dumps(data).encode("utf-8"),
             headers=headers,
             method="POST",
@@ -189,18 +236,10 @@ def _query_haiku(
             raw = response.read()
         body = json.loads(raw.decode("utf-8"))
     except (urllib.error.HTTPError, urllib.error.URLError, OSError) as e:
-        print(
-            "{0} bash prefix extractor: network error ({1})".format(
-                PLUGIN_NAME, e
-            )
-        )
+        _log_extractor_error("network", e)
         return None
     except (ValueError, json.JSONDecodeError) as e:
-        print(
-            "{0} bash prefix extractor: parse error ({1})".format(
-                PLUGIN_NAME, e
-            )
-        )
+        _log_extractor_error("parse", e)
         return None
 
     content = body.get("content") if isinstance(body, dict) else None

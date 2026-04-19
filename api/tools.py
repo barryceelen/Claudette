@@ -95,22 +95,21 @@ def build_web_search_tool_def(settings):
 
     user_loc = settings.get("web_search_user_location")
     if (
-        user_loc
-        and isinstance(user_loc, dict)
+        isinstance(user_loc, dict)
         and user_loc.get("type") == "approximate"
-        and (
-            user_loc.get("city")
-            or user_loc.get("country")
-            or user_loc.get("timezone")
-        )
     ):
-        tool_def["user_location"] = {
-            "type": "approximate",
-            "city": str(user_loc.get("city", "")),
-            "region": str(user_loc.get("region", "")),
-            "country": str(user_loc.get("country", "")),
-            "timezone": str(user_loc.get("timezone", "")),
-        }
+        # Only include keys the user actually populated. The Anthropic API
+        # treats empty strings as data rather than absence, so sending
+        # ``"region": ""`` for a user who set only ``city`` subtly degrades
+        # localization. Trim and skip anything that doesn't look like a
+        # meaningful value.
+        loc_out = {"type": "approximate"}
+        for key in ("city", "region", "country", "timezone"):
+            val = user_loc.get(key)
+            if isinstance(val, str) and val.strip():
+                loc_out[key] = val.strip()
+        if len(loc_out) > 1:
+            tool_def["user_location"] = loc_out
 
     return tool_def
 

@@ -595,36 +595,28 @@ def _command_matches_safe_shortcut(command: str, settings) -> bool:
     return _normalize_cmd_key(command) in _SAFE_COMMANDS
 
 
-def _kill_shell_children(proc: Optional[subprocess.Popen]) -> None:
+def _terminate_process_group(proc: Optional[subprocess.Popen]) -> None:
     """
-    Terminate child PIDs of the interactive bash process (Unix only).
+    Signal SIGTERM to the bash process group (POSIX only).
 
-    On timeout the parent shell may still be waiting while a child runs
-    so ``sleep 999`` or similar cannot ignore the session timeout.
+    ``_start_process`` spawns bash with ``start_new_session=True`` so every
+    descendant inherits the shell's process group. A single ``killpg`` then
+    reaches grandchildren (``bash -c 'sleep 999 & wait'``, backgrounded pipe
+    stages, etc.) that the old ``pgrep -P`` walk missed, and avoids the
+    PID-reuse race that walk had between listing and signalling.
     """
-    if proc is None or proc.poll() is not None:
+    if proc is None or os.name == "nt":
         return
-    if os.name == "nt":
+    if proc.poll() is not None:
         return
-    pid = proc.pid
     try:
-        out = subprocess.run(
-            ["pgrep", "-P", str(pid)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=3,
-            check=False,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pgid = os.getpgid(proc.pid)
+    except (OSError, ProcessLookupError):
         return
-    for line in (out.stdout or "").strip().split("\n"):
-        line = line.strip()
-        if line.isdigit():
-            try:
-                os.kill(int(line), signal.SIGTERM)
-            except (OSError, ValueError):
-                pass
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except (OSError, ProcessLookupError):
+        pass
 
 
 def _run_bash_syntax_check(bash_exe: str, script_path: str) -> Optional[str]:
@@ -742,6 +734,11 @@ class BashSession:
                 proc.stdin.close()
         except (OSError, BrokenPipeError, ValueError):
             pass
+        # Kill the whole process group first (POSIX) so grandchildren
+        # inherited via ``start_new_session=True`` die with the shell.
+        # Without this, ``proc.kill()`` SIGKILLs only bash itself and leaves
+        # background jobs reparented to init.
+        _terminate_process_group(proc)
         try:
             proc.kill()
         except OSError:
@@ -788,16 +785,26 @@ class BashSession:
         if not self._bash_exe:
             return
         self._buf = ""
+        # ``start_new_session=True`` makes the bash process a session and
+        # process-group leader so ``os.killpg`` can reach every descendant on
+        # timeout; the flag is POSIX-only. ``subprocess.Popen`` silently
+        # ignores unknown kwargs on Windows, but we gate explicitly to keep
+        # the cross-platform contract obvious.
+        popen_kwargs = {
+            "cwd": self._cwd,
+            "stdin": subprocess.PIPE,
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.STDOUT,
+            "text": False,
+            "bufsize": 0,
+            "env": os.environ.copy(),
+        }
+        if os.name != "nt":
+            popen_kwargs["start_new_session"] = True
         try:
             self._proc = subprocess.Popen(
                 [self._bash_exe],
-                cwd=self._cwd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=False,
-                bufsize=0,
-                env=os.environ.copy(),
+                **popen_kwargs,
             )
         except OSError:
             self._proc = None
@@ -966,7 +973,9 @@ class BashSession:
                 os.unlink(script_path)
             except OSError:
                 pass
-            _kill_shell_children(self._proc)
+            # ``_close_process`` sends SIGTERM to the shell's process group
+            # before SIGKILL, so background jobs (``sleep 999 &``) and pipe
+            # stages all die with the session rather than leaking to init.
             self._close_process()
             self._start_process()
             return (

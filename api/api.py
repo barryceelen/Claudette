@@ -56,6 +56,12 @@ class ClaudetteClaudeAPI:
         self.settings = sublime.load_settings(SETTINGS_FILE)
         self.api_key = claudette_get_api_key_value()
         self.base_url = self.settings.get("base_url", DEFAULT_BASE_URL)
+        # Ensure a trailing slash so ``urljoin(base_url, "messages")`` keeps
+        # the full path. Without this, a user-configured base like
+        # ``https://proxy.example.com/claude`` silently resolves to
+        # ``https://proxy.example.com/messages`` and every request 404s.
+        if isinstance(self.base_url, str) and not self.base_url.endswith("/"):
+            self.base_url = self.base_url + "/"
         try:
             self.max_tokens = int(self.settings.get("max_tokens", MAX_TOKENS))
         except (TypeError, ValueError):
