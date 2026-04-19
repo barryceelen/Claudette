@@ -234,7 +234,15 @@ class ClaudetteChatView:
         """Build HTML for the status line: info icon + message + spinner."""
         escaped_msg = self.escape_html(message)
         escaped_char = self.escape_html(spinner_char)
-        return ("ℹ️ {0} {1}").format(escaped_msg, escaped_char)
+        return (
+            '<body id="claudette-tool-status">'
+            "<style>"
+            "body#claudette-tool-status {{ padding-top: 0.6rem; }}"
+            "div.claudette-tool-status-line {{ margin-top: 0.6rem; }}"
+            "</style>"
+            '<div class="claudette-tool-status-line">ℹ️ {0} {1}</div>'
+            "</body>"
+        ).format(escaped_msg, escaped_char)
 
     def set_tool_status(self, message):
         """
@@ -259,7 +267,7 @@ class ClaudetteChatView:
         phantom_set = self._get_tool_status_phantom_set(self.view)
         region = sublime.Region(self.view.size(), self.view.size())
         html = self._tool_status_phantom_html(message, char)
-        phantom = sublime.Phantom(region, html, sublime.LAYOUT_INLINE, None)
+        phantom = sublime.Phantom(region, html, sublime.LAYOUT_BLOCK, None)
         already_running = len(phantom_set.phantoms) > 0
         phantom_set.update([phantom])
         if not already_running:
@@ -283,7 +291,7 @@ class ClaudetteChatView:
         phantom_set = self._get_tool_status_phantom_set(self.view)
         region = sublime.Region(self.view.size(), self.view.size())
         html = self._tool_status_phantom_html(message, char)
-        phantom = sublime.Phantom(region, html, sublime.LAYOUT_INLINE, None)
+        phantom = sublime.Phantom(region, html, sublime.LAYOUT_BLOCK, None)
         phantom_set.update([phantom])
         sublime.set_timeout(
             lambda: self._schedule_tool_status_spinner(), SPINNER_INTERVAL_MS
