@@ -94,8 +94,15 @@
 	// is true. Example: ["git status", "npm test"]. Unsafe patterns still require confirmation.
 	// Populated automatically when you pick "Yes, and don't ask again for `<prefix>` commands".
 	"bash_tool_allow_prefix": [],
-	// Extra banned command names (lowercase basenames) in addition to the built-in set (network
-	// clients, browsers, etc.). Example: ["docker"] to block the docker binary by first token.
+	// Extra command names (lowercase basenames) disabled in addition to the built-in hygiene
+	// set (network clients, browsers). Example: ["docker"] to reject the docker binary by first
+	// token. The check is applied after stripping leading env assignments (FOO=bar) and env/exec
+	// wrappers, so "env docker ps" and "exec docker ps" are caught too. It is NOT a sandbox:
+	// a command the model wraps via "python -c", "node -e", a script file, etc. can still run
+	// anything. The confirmation dialog (bash_tool_confirm) is the real safety boundary.
+	// Also blocked by the default bash policy (not configurable here): command substitution
+	// ($(...), backticks), /dev/tcp and /dev/udp network paths, and "<shell> -c" re-entry
+	// (bash -c, sh -c, etc.) because their inner commands are not visible to the checker.
 	"bash_tool_banned_commands_extra": [],
 	// When true (default), cd and cwd reset only allow directories under the session's
 	// initial working directory. Else, all directories that are open in the sidebar are allowed.

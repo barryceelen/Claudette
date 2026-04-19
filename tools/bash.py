@@ -4,8 +4,19 @@ Bash tool executor for Anthropic's bash tool (persistent session).
 Runs model-requested shell commands in a long-lived ``bash`` subprocess and
 returns ``tool_result`` payloads for the Messages API. The module centralizes
 execution hardening (syntax check, non-interactive stdin, timeouts, child
-termination), static policy (banned commands, ``cd`` sandbox), and UX
-(confirmation, optional chat echo) so ``api`` stays thin.
+termination), default hygiene checks (a small disabled-command list, ``cd``
+scoping, rejection of shell features that hide commands from the checker),
+and UX (confirmation, optional chat echo) so ``api`` stays thin.
+
+The hygiene checks are not a sandbox. They stop the most common accidental
+or prompt-injected patterns — ``curl``/``wget`` calls, ``$(...)`` and
+backtick substitution, ``/dev/tcp/`` network access, ``sh -c`` re-entry,
+and ``FOO=bar curl`` / ``env curl`` / ``exec curl`` wrappers — so that
+low-effort injection payloads don't slip past the allowlist. A determined
+model can still reach the network via an interpreter such as ``python -c``
+or ``node -e`` or by writing a script to disk and running it. The inline
+confirmation dialog is the real safety boundary; these checks just decide
+which commands can skip it.
 """
 
 import os
@@ -27,7 +38,10 @@ from .bash_prefix import extract_bash_allow_prefix
 from .confirmation_errors import ToolUseDeniedError
 
 
-# Default banned first tokens.
+# Commands disabled by default. This is a hygiene layer, not a sandbox: the
+# confirmation dialog is what actually gates execution. The list picks common
+# network/browser tools that have no legitimate coding use so copy-pasted
+# injection payloads don't silently match an allowlist prefix.
 _DEFAULT_BANNED_COMMANDS: Set[str] = {
     "alias",
     "curl",
@@ -47,6 +61,15 @@ _DEFAULT_BANNED_COMMANDS: Set[str] = {
     "firefox",
     "safari",
 }
+
+# Wrappers that exec whatever follows them; the default-policy check must
+# see the wrapped command, not the wrapper (``env FOO=bar curl x`` → ``curl``).
+_TRANSPARENT_WRAPPERS: Set[str] = {"env", "exec"}
+
+# Shells whose ``-c`` flag takes an unparsed command string the checker
+# cannot inspect. Script-file invocation (``bash foo.sh``) is allowed —
+# the file's contents live on disk under allowed roots.
+_SHELL_BINARIES: Set[str] = {"sh", "bash", "zsh", "dash", "ash"}
 
 # Read-only style commands that may skip confirmation when enabled (see settings).
 _SAFE_COMMANDS: Set[str] = {
@@ -252,10 +275,11 @@ def _split_command_segments(command: str) -> List[str]:
 
 def _get_banned_set(settings) -> Set[str]:
     """
-    Build the set of disallowed command basenames for this session.
+    Build the set of disabled command basenames for this session.
 
-    Starts from defaults (network clients, browsers),
-    then merges the ``bash_tool_banned_commands_extra`` setting.
+    Starts from the built-in hygiene list (network clients, browsers) and
+    merges the ``bash_tool_banned_commands_extra`` setting. This is a
+    hygiene layer, not a sandbox — see the module docstring.
     """
     banned = set(_DEFAULT_BANNED_COMMANDS)
     extra = settings.get("bash_tool_banned_commands_extra")
@@ -264,6 +288,125 @@ def _get_banned_set(settings) -> Set[str]:
             if isinstance(x, str) and x.strip():
                 banned.add(x.strip().lower())
     return banned
+
+
+def _is_env_assignment(token: str) -> bool:
+    """True if ``token`` looks like a ``NAME=VALUE`` env assignment.
+
+    Bash treats leading assignments before a command as temporary env for
+    that command (``FOO=bar curl x``); they must be skipped before picking
+    the first real token to check against the disabled-command list.
+    """
+    if not token or "=" not in token:
+        return False
+    name, _eq, _rest = token.partition("=")
+    if not name:
+        return False
+    first = name[0]
+    if not (first.isalpha() or first == "_"):
+        return False
+    for c in name[1:]:
+        if not (c.isalnum() or c == "_"):
+            return False
+    return True
+
+
+def _unwrap_env_exec_prefix(parts: List[str]) -> List[str]:
+    """Strip leading assignments and ``env``/``exec`` wrappers from ``parts``.
+
+    ``env FOO=bar curl x`` and ``exec curl x`` both end up running ``curl``;
+    the disabled-command check needs to see the real command, not the
+    wrapper. Skips wrapper flags (``env -i``, ``env -u NAME``, ``exec -a N``)
+    and any additional ``NAME=VALUE`` tokens between the wrapper and its
+    command so the returned list starts with the command that will actually
+    exec.
+    """
+    parts = list(parts)
+    while parts and _is_env_assignment(parts[0]):
+        parts = parts[1:]
+
+    while parts:
+        base = os.path.basename(parts[0]).lower()
+        if base not in _TRANSPARENT_WRAPPERS:
+            break
+        parts = parts[1:]
+        while parts:
+            tok = parts[0]
+            if tok == "--":
+                parts = parts[1:]
+                break
+            if tok.startswith("-") and tok != "-":
+                if tok in ("-u", "-a", "-S") and len(parts) > 1:
+                    parts = parts[2:]
+                else:
+                    parts = parts[1:]
+                continue
+            if _is_env_assignment(tok):
+                parts = parts[1:]
+                continue
+            break
+    return parts
+
+
+def _is_shell_c_reentry(base: str, args: List[str]) -> bool:
+    """True if ``base`` is a shell invoked with a ``-c`` command string.
+
+    ``bash -c '...'`` and combined short-flag forms (``-lc``, ``-ilc``)
+    read their command from the argument, which the default-policy check
+    cannot inspect. Script-file invocation (``bash foo.sh``) and bare
+    ``bash`` (no args) are not flagged here.
+    """
+    if base not in _SHELL_BINARIES:
+        return False
+    for a in args:
+        if not a.startswith("-") or a == "--":
+            return False
+        if a == "-c":
+            return True
+        if len(a) > 1 and a[1] != "-" and "c" in a[1:]:
+            return True
+    return False
+
+
+def _segment_hides_commands(segment: str) -> Optional[str]:
+    """Return a short reason if ``segment`` contains command-hiding features.
+
+    Flags command substitution (``$(...)`` and backticks) and bash's network
+    pseudo-paths (``/dev/tcp/``, ``/dev/udp/``) because the commands inside
+    or the connections they open are invisible to the disabled-command
+    check. Literal occurrences inside single-quoted strings are ignored;
+    double-quoted strings are NOT ignored because bash still performs
+    substitution there.
+
+    Returns ``None`` when nothing suspicious was found.
+    """
+    i = 0
+    n = len(segment)
+    in_single = False
+    while i < n:
+        c = segment[i]
+        if in_single:
+            if c == "'":
+                in_single = False
+            i += 1
+            continue
+        if c == "'":
+            in_single = True
+            i += 1
+            continue
+        if c == "\\" and i + 1 < n:
+            i += 2
+            continue
+        if c == "`":
+            return "backtick command substitution"
+        if c == "$" and i + 1 < n and segment[i + 1] == "(":
+            return "$(...) command substitution"
+        if segment.startswith("/dev/tcp/", i):
+            return "/dev/tcp/ network access"
+        if segment.startswith("/dev/udp/", i):
+            return "/dev/udp/ network access"
+        i += 1
+    return None
 
 
 def _resolve_cd_target(arg: str, cur_cwd: str) -> str:
@@ -288,15 +431,28 @@ def _validate_cd_and_bans(
     banned: Set[str],
 ) -> Optional[str]:
     """
-    Reject banned first tokens and illegal ``cd`` targets before execution.
+    Apply default-policy checks before the command runs.
 
-    Simulates directory changes across segments so ``cd a && cd b`` validates
-    ``b`` from the right cwd. When ``restrict_initial_only`` is true, only the
-    initial session directory tree is allowed; otherwise the full allowed root
+    For each segment of the compound command, rejects:
+
+    * Shell features that hide commands from the checker:
+      ``$(...)``, backticks, ``/dev/tcp/``, ``/dev/udp/``
+      (see ``_segment_hides_commands``).
+    * ``<shell> -c '...'`` re-entry for bash/sh/zsh/dash/ash, because the
+      inner command string is not inspected.
+    * Commands whose first real token (after stripping ``NAME=VALUE``
+      assignments and ``env``/``exec`` wrappers) is on the disabled list.
+    * ``cd`` / ``pushd`` to a target outside the allowed roots; ``popd`` is
+      rejected outright because the directory stack is not simulated.
+
+    ``cd`` targets are resolved from a simulated cwd that advances across
+    segments so ``cd a && cd b`` validates ``b`` from the right directory.
+    When ``restrict_initial_only`` is true, only the session's initial
+    directory tree is allowed for ``cd``; otherwise the full allowed-root
     union applies.
 
     Returns:
-        Error message string, or ``None`` if the command passes static checks.
+        Error message string, or ``None`` if the command passes.
     """
     simulated = start_cwd
     segments = _split_command_segments(command)
@@ -305,24 +461,47 @@ def _validate_cd_and_bans(
     for seg in segments:
         if not seg.strip() or seg.strip().startswith("#"):
             continue
+
+        hide_reason = _segment_hides_commands(seg)
+        if hide_reason:
+            return (
+                "Error: {0} is blocked by the default bash policy "
+                "because its inner command is not visible to the "
+                "checker.".format(hide_reason)
+            )
+
         try:
             parts = shlex.split(seg, posix=True)
         except ValueError:
             return "Error: Invalid shell quoting in command segment."
         if not parts:
             continue
-        base = os.path.basename(parts[0]).lower()
+
+        unwrapped = _unwrap_env_exec_prefix(parts)
+        if not unwrapped:
+            continue
+
+        first_token = unwrapped[0]
+        base = os.path.basename(first_token).lower()
+
+        if _is_shell_c_reentry(base, unwrapped[1:]):
+            return (
+                "Error: '{0} -c' is blocked by the default bash policy; "
+                "the inner command string is not inspected. Rewrite as "
+                "individual commands or run a script file.".format(base)
+            )
+
         if base in banned:
             return (
-                "Error: Command '{0}' is not allowed for security reasons.".format(
-                    base
-                )
+                "Error: Command '{0}' is disabled by the default bash "
+                "policy.".format(base)
             )
-        # Treat cd and pushd identically: both change cwd and need sandbox
+
+        # Treat cd and pushd identically: both change cwd and need scope
         # validation.  popd pops from a directory stack we cannot simulate
-        # reliably, so block it to prevent sandbox escape.
-        is_cd = parts[0] in ("cd", "pushd") or base in ("cd", "pushd")
-        is_popd = parts[0] == "popd" or base == "popd"
+        # reliably, so block it to prevent scope escape.
+        is_cd = first_token in ("cd", "pushd") or base in ("cd", "pushd")
+        is_popd = first_token == "popd" or base == "popd"
         if is_popd:
             return (
                 "Error: popd is not allowed. The directory stack cannot be "
@@ -334,21 +513,20 @@ def _validate_cd_and_bans(
                 if restrict_initial_only
                 else allowed_real
             )
-            if len(parts) < 2:
+            if len(unwrapped) < 2:
                 new_home = os.path.realpath(os.path.expanduser("~"))
                 if not _path_under_allowed_roots(new_home, roots):
                     return (
                         "Error: {0} without argument targets a directory "
-                        "outside allowed roots.".format(parts[0])
+                        "outside allowed roots.".format(first_token)
                     )
                 simulated = new_home
             else:
-                target = _resolve_cd_target(parts[1], simulated)
+                target = _resolve_cd_target(unwrapped[1], simulated)
                 if not _path_under_allowed_roots(target, roots):
                     return (
-                        "Error: {0} to '{1}' was blocked. For security, the "
-                        "shell may only use directories under allowed "
-                        "roots.".format(parts[0], target)
+                        "Error: {0} to '{1}' was blocked. The bash tool is "
+                        "scoped to allowed roots.".format(first_token, target)
                     )
                 simulated = target
     return None
@@ -507,13 +685,14 @@ class BashSession:
     Long-lived ``bash`` subprocess with serialized command execution.
 
     Commands are written as temp scripts and sourced so state persists across
-    tool calls (cwd, env). Security hooks (syntax, stdin null, bans, cwd reset)
-    wrap each invocation; ``allowed_roots`` must match ``get_allowed_roots``.
+    tool calls (cwd, env). Default-policy checks (syntax, stdin null,
+    disabled commands, subshell hiding, cwd reset) wrap each invocation;
+    ``allowed_roots`` must match ``get_allowed_roots``.
     """
 
     def __init__(self, cwd: str, settings, allowed_roots: Optional[List[str]] = None):
         """
-        Start a bash session at ``cwd`` with security metadata from ``settings``.
+        Start a bash session at ``cwd`` with policy metadata from ``settings``.
 
         ``allowed_roots`` should be the same list as ``get_allowed_roots`` so
         bash and file tools agree on filesystem scope; when empty, falls back
@@ -652,10 +831,12 @@ class BashSession:
 
     def validate_command(self, command: str) -> Optional[str]:
         """
-        Run ban-list and ``cd`` sandbox checks without executing the command.
+        Run default-policy checks (disabled commands, subshell hiding,
+        ``cd`` scope) without executing the command.
 
-        Exposed so ``run_bash_tool`` can reject bad commands before showing the
-        confirmation dialog; respects ``bash_tool_restrict_to_initial_root_only``.
+        Exposed so ``run_bash_tool`` can reject rejected shapes before showing
+        the confirmation dialog; respects
+        ``bash_tool_restrict_to_initial_root_only``.
         """
         settings = self._settings
         restrict = bool(
