@@ -130,6 +130,7 @@
 	// Do not set both web_search_allowed_domains and web_search_blocked_domains.
 	"web_search_allowed_domains": [],
 	// Optional: exclude results from these domains.
+	// Do not set both web_search_allowed_domains and web_search_blocked_domains.
 	"web_search_blocked_domains": [],
 	// Optional: localize search results. IANA timezone: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
 	// "web_search_user_location": {
