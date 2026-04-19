@@ -120,11 +120,13 @@
 	"allowed_tool_roots": [],
 	// When true, Claude can search the web for up-to-date information. Only works
 	// with supported models (e.g. Claude Opus 4.6, 4.5, Sonnet 4.5, Haiku 4.5).
-	// Web search is billed at $10 per 1,000 searches in addition to token costs.
+	// Each search is billed by Anthropic in addition to token costs — see their
+	// pricing page for current rates.
 	// https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool
 	// "web_search": false,
+	// Max searches per turn. Clamped to the range 1..20 by Claudette.
 	"web_search_max_uses": 5,
-	// Cost per web search in dollars (as of April 2026). Anthropic bills $10 per 1,000 searches ($0.01 each).
+	// Cost per web search in dollars (as of April 2026).
 	"web_search_cost_per_search": 0.01,
 	// Optional: only include results from these domains (e.g. ["example.com", "docs.example.com"]).
 	// Do not set both web_search_allowed_domains and web_search_blocked_domains.

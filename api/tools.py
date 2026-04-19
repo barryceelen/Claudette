@@ -114,6 +114,15 @@ def build_web_search_tool_def(settings):
     return tool_def
 
 
+def get_web_search_cost_per_search(settings) -> float:
+    """Return the per-search cost, coerced to float with a safe fallback."""
+    default = 0.01
+    try:
+        return float(settings.get("web_search_cost_per_search", default))
+    except (TypeError, ValueError):
+        return default
+
+
 def build_text_editor_tool_def(settings, model):
     """Build text editor tool definition, or None if disabled.
 
@@ -191,12 +200,6 @@ def parse_web_search_items(items):
 def format_search_results(source_lines):
     """Format web search source lines into a markdown section.
 
-    The heading is emitted as an h2 so Sublime Text folds the block as a
-    single collapsible section at the end of the assistant response. The
-    blank-line separator before the heading is inserted by the streaming
-    response handler (see ``_ensure_blank_line``) based on the view's
-    current tail, so this format does not prepend its own newline.
-
     Args:
         source_lines: Markdown link lines (e.g. ["- [Title](url)", ...]).
 
@@ -205,4 +208,11 @@ def format_search_results(source_lines):
     """
     if not source_lines:
         return ""
-    return "## Sources\n\n" + "\n".join(source_lines) + "\n"
+    seen = set()
+    deduped = []
+    for line in source_lines:
+        if line in seen:
+            continue
+        seen.add(line)
+        deduped.append(line)
+    return "## Sources\n\n" + "\n".join(deduped) + "\n"

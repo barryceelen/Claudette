@@ -15,7 +15,6 @@ from ..constants import (
     DEFAULT_MODEL,
     DEFAULT_VERIFY_SSL,
     MAX_TOKENS,
-    PLUGIN_NAME,
     SETTINGS_FILE,
 )
 from ..statusbar.spinner import ClaudetteSpinner
@@ -41,6 +40,7 @@ from .tools import (
     build_text_editor_tool_def,
     build_web_search_tool_def,
     format_search_results,
+    get_web_search_cost_per_search,
     parse_web_search_items,
 )
 
@@ -145,10 +145,12 @@ class ClaudetteClaudeAPI:
             title="Enable Web Search?",
             icon="🌍",
             message_markdown=(
-                "Claudette can give Claude access to Anthropic's hosted "
-                "web search tool so it can look up current information. "
-                "This setting applies globally to all future chats and "
-                "can be changed later in `Claudette.sublime-settings`."
+                "Let Claude look up current information using Anthropic's "
+                "hosted web search.\n\n"
+                "- Each search is billed by Anthropic on top of token "
+                "costs. See their pricing page for current rates.\n"
+                "- Applies to all future chats until you change it in "
+                "`Claudette.sublime-settings`."
             ),
             question="Enable web search?",
             options=[
@@ -473,7 +475,10 @@ class ClaudetteClaudeAPI:
                         else:
                             sources_lines.extend(items_lines)
                             sublime.set_timeout(
-                                lambda: sublime.status_message(""), 0
+                                lambda: sublime.status_message(
+                                    "Web search complete"
+                                ),
+                                0,
                             )
 
                 elif event_type == "content_block_delta":
@@ -497,27 +502,10 @@ class ClaudetteClaudeAPI:
                         fragment = delta.get("partial_json", "")
                         if fragment and block_state is not None:
                             block_state["_json_buf"] += fragment
-                    elif (
-                        block_state is not None
-                        and block_state.get("type")
-                        == "web_search_tool_result"
-                    ):
-                        items = delta.get("content")
-                        incremental = None
-                        if isinstance(items, list):
-                            incremental = items
-                        elif isinstance(items, dict):
-                            incremental = [items]
-                        if incremental is not None:
-                            new_lines, has_error = parse_web_search_items(
-                                incremental
-                            )
-                            if has_error:
-                                self._report_web_search_error(
-                                    incremental, error_view
-                                )
-                            else:
-                                sources_lines.extend(new_lines)
+
+                    # Note: ``web_search_tool_result`` blocks arrive fully
+                    # populated on ``content_block_start`` (handled above),
+                    # so there is no delta stream to reassemble here.
 
                     # Inline citations render as markdown links next to
                     # the text that used them (model-controlled; may be
@@ -605,6 +593,27 @@ class ClaudetteClaudeAPI:
 
         return stop_reason, assistant_content, usage, sources_lines
 
+    # Map known Anthropic web-search error codes to short, actionable
+    # messages. Unknown codes fall through to the raw code so new error
+    # types from the API still surface something useful without a code
+    # change here.
+    _WEB_SEARCH_ERROR_MESSAGES = {
+        "too_many_requests": (
+            "rate limit exceeded — try again shortly"
+        ),
+        "max_uses_exceeded": (
+            "hit the per-turn search limit — raise "
+            "web_search_max_uses in settings"
+        ),
+        "too_many_uses": (
+            "hit the per-turn search limit — raise "
+            "web_search_max_uses in settings"
+        ),
+        "query_too_long": "query was too long for the search API",
+        "invalid_tool_input": "invalid search input",
+        "unavailable": "service temporarily unavailable",
+    }
+
     def _report_web_search_error(self, items, error_view):
         """Surface a web-search error as a chat-status message."""
         err_item = next(
@@ -621,7 +630,13 @@ class ClaudetteClaudeAPI:
             if err_item
             else "unavailable"
         )
-        err_msg = "Web search error: {0}".format(error_code)
+        friendly = self._WEB_SEARCH_ERROR_MESSAGES.get(error_code)
+        if friendly:
+            err_msg = "Web search error: {0} ({1})".format(
+                friendly, error_code
+            )
+        else:
+            err_msg = "Web search error: {0}".format(error_code)
 
         def show(msg=err_msg, v=error_view):
             if v is not None and v.window() is not None:
@@ -692,12 +707,6 @@ class ClaudetteClaudeAPI:
         web_search_tool = build_web_search_tool_def(self.settings)
         if web_search_tool:
             tools_list.append(web_search_tool)
-        print(
-            "{0} agent loop tools: {1}".format(
-                PLUGIN_NAME,
-                [t.get("name", t.get("type", "?")) for t in tools_list],
-            )
-        )
 
         # chat_view may be sublime View or ClaudetteChatView (.view,
         # .set_tool_status, .clear_tool_status).
@@ -1102,8 +1111,8 @@ class ClaudetteClaudeAPI:
                         cache_read_tokens=acc_cache_read_tokens,
                         cache_write_tokens=acc_cache_write_tokens,
                     )
-                    cost_per_search = self.settings.get(
-                        "web_search_cost_per_search", 0.01
+                    cost_per_search = get_web_search_cost_per_search(
+                        self.settings
                     )
                     web_search_cost = (
                         acc_web_search_requests * cost_per_search
@@ -1293,9 +1302,7 @@ class ClaudetteClaudeAPI:
                 cache_read_tokens=cache_read_tokens,
                 cache_write_tokens=cache_write_tokens,
             )
-            cost_per_search = self.settings.get(
-                "web_search_cost_per_search", 0.01
-            )
+            cost_per_search = get_web_search_cost_per_search(self.settings)
             current_cost += web_search_requests * cost_per_search
 
             sess = update_session_stats(
