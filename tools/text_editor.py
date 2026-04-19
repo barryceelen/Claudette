@@ -1,14 +1,10 @@
 """
 Text editor tool executor for Anthropic's text editor tool.
 
-Resolves paths against allowed roots (e.g. project folders), runs
-view/str_replace/create/insert, and returns tool_result payloads.
-
-Safety: symlink-safe containment (``ensure_under_root``), read-before-write
-mtime tracking when ``read_file_timestamps`` is passed, encoding detection
-for read/write round-trips, atomic writes via sibling tempfile + rename so
-a crash mid-write cannot truncate the target, and rejection of ``.ipynb``
-files (use a dedicated notebook editor).
+Resolves paths against allowed roots (e.g. project folders), executes
+view/str_replace/create/insert commands, and returns tool_result payloads.
+Enforces symlink-safe containment, read-before-write staleness checks,
+encoding-preserving round-trips, atomic writes, and .ipynb rejection.
 """
 
 import os
@@ -28,11 +24,7 @@ NO_ALLOWED_ROOTS_MESSAGE = (
 
 
 def _extra_allowed_roots_from_settings(settings) -> List[str]:
-    """
-    Extra directories from the allowed_tool_roots setting (text editor and bash tools).
-
-    Entries are deduplicated by normalized path; order is preserved.
-    """
+    """Return normalized, deduplicated directories from the allowed_tool_roots setting."""
     ordered: List[str] = []
     seen = set()
     if not settings:
@@ -50,15 +42,31 @@ def _extra_allowed_roots_from_settings(settings) -> List[str]:
     return ordered
 
 
+def _is_claudette_chat_view(view) -> bool:
+    """Return True if ``view`` is a Claudette chat view, not user code."""
+    if view is None:
+        return False
+    try:
+        return bool(view.settings().get("claudette_is_chat_view", False))
+    except Exception:
+        return False
+
+
 def get_allowed_roots(window, settings) -> List[str]:
     """
     Return list of allowed filesystem roots for the text editor and bash tools.
 
-    Order: sidebar folders (window.folders()), then allowed_tool_roots from settings.
-    If there are no sidebar folders yet, uses the active view's file directory when
-    the file is saved to disk.
+    Order:
+      1. Sidebar folders (``window.folders()``)
+      2. ``allowed_tool_roots`` from settings
+      3. Fallback when both of the above are empty: directories of all saved
+         non-chat views in the window. The active view's directory comes
+         first when it qualifies so a single open file keeps behaving
+         naturally; other open files are included as well so the user can
+         still operate when the chat view has focus (in which case
+         ``active_view()`` is the chat view itself, not their source file).
     """
-    roots = []
+    roots: List[str] = []
 
     if window:
         folders = window.folders()
@@ -70,14 +78,38 @@ def get_allowed_roots(window, settings) -> List[str]:
             roots.append(p)
 
     if not roots and window:
-        view = window.active_view()
-        if view and view.file_name():
-            roots.append(os.path.dirname(view.file_name()))
+        seen = set()
+
+        def add(file_path: str) -> None:
+            if not file_path:
+                return
+            d = os.path.normpath(os.path.dirname(file_path))
+            if d and d not in seen:
+                seen.add(d)
+                roots.append(d)
+
+        active = window.active_view()
+        if (
+            active
+            and active.file_name()
+            and not _is_claudette_chat_view(active)
+        ):
+            add(active.file_name())
+
+        for view in window.views():
+            if view is active:
+                continue
+            if _is_claudette_chat_view(view):
+                continue
+            fn = view.file_name()
+            if fn:
+                add(fn)
 
     return roots
 
 
 def _is_ipynb_path(resolved: str) -> bool:
+    """Return True if the path points to a Jupyter Notebook file."""
     return resolved.lower().endswith(".ipynb")
 
 
@@ -112,17 +144,15 @@ def _read_file_with_encoding(path: str) -> Tuple[str, str, str]:
             )
         enc = "utf-8"
 
-    # Only treat the file as CRLF-endowed when every newline is paired;
-    # mixed files (one or more bare ``\n``) get LF on write-back instead
-    # of silently converting those lines to CRLF.
+    # Only treat the file as CRLF when every newline is paired; mixed files
+    # (any bare ``\n``) fall back to LF to avoid silently converting them.
     crlf_count = raw.count(b"\r\n")
     if crlf_count > 0 and raw.count(b"\n") == crlf_count:
         line_ending = "\r\n"
     else:
         line_ending = "\n"
 
-    # Normalize to LF internally so downstream string ops see clean lines
-    # even if the file had stray ``\r\n`` sequences.
+    # Normalize to LF internally so downstream string ops see clean lines.
     if b"\r\n" in raw:
         text = text.replace("\r\n", "\n")
 
@@ -132,16 +162,9 @@ def _read_file_with_encoding(path: str) -> Tuple[str, str, str]:
 def _atomic_write_bytes(path: str, data: bytes) -> None:
     """Write ``data`` to ``path`` atomically via a sibling tempfile + rename.
 
-    Creates a tempfile in the same directory as ``path`` so ``os.replace``
-    is a same-filesystem atomic rename. Preserves the original file's
-    permission bits if it existed; new files fall back to ``0o644``.  On
-    any error the tempfile is unlinked and the exception propagates.
-
-    Why: the previous implementation used ``open(path, "wb")``, which
-    truncates immediately — a crash or power loss between truncation and
-    the end of ``f.write()`` leaves the user's file empty or partial. An
-    atomic rename keeps the old contents intact until the new version is
-    fully on disk.
+    The tempfile lives in the same directory so ``os.replace`` is a same-
+    filesystem rename. Preserves existing permission bits; new files default
+    to ``0o644``. On any error the tempfile is unlinked before re-raising.
     """
     directory = os.path.dirname(path) or "."
 
@@ -183,6 +206,10 @@ def _write_file_with_encoding(
     """
     Write text back to disk atomically, preserving BOM and line endings.
     """
+    # Strip a stray BOM sentinel to avoid emitting a double BOM.
+    if text.startswith("\ufeff"):
+        text = text[1:]
+
     if line_ending == "\r\n":
         text = text.replace("\n", "\r\n")
 
@@ -194,6 +221,7 @@ def _write_file_with_encoding(
 
 
 def _timestamp_key(path: str) -> str:
+    """Return the canonical path used as a key in read_file_timestamps."""
     try:
         return os.path.realpath(path)
     except OSError:
@@ -223,7 +251,9 @@ def _stale_write_error(
         current = os.path.getmtime(path)
     except OSError as e:
         return "Error: Could not verify file state ({0}).".format(str(e))
-    if abs(current - read_file_timestamps[key]) > 1e-6:
+    # Exact equality: we store whatever getmtime returned, so a legitimate
+    # unchanged file always compares bit-identical.
+    if current != read_file_timestamps[key]:
         return (
             "Error: File has been modified since it was read. Read it again "
             "before writing."
@@ -235,6 +265,7 @@ def _record_read(
     path: str,
     read_file_timestamps: Optional[Dict[str, float]],
 ) -> None:
+    """Record the mtime of a successfully read file for later staleness checks."""
     if read_file_timestamps is None:
         return
     if not os.path.isfile(path):
@@ -249,6 +280,7 @@ def _after_write_update(
     path: str,
     read_file_timestamps: Optional[Dict[str, float]],
 ) -> None:
+    """Refresh the stored mtime after a write so the next write isn't falsely stale."""
     if read_file_timestamps is None:
         return
     try:
@@ -341,19 +373,15 @@ def resolve_path(
 
     normalized = os.path.normpath(path)
 
-    # After ``normpath`` any inner ``foo/../bar`` segments have been
-    # collapsed; a relative path escapes its join-root iff its first
-    # component is literally ``..``. We split on both ``/`` and ``\`` so
-    # a Windows-style payload on Unix (``..\\x``) is still caught.
+    # After normpath, a traversing relative path starts with "..".
+    # Split on both separators to catch Windows-style payloads on Unix.
     first_component = normalized.split("/", 1)[0].split("\\", 1)[0]
     if first_component == "..":
         return None, "Error: Path traversal is not allowed."
 
-    # If path is just a filename (no directory), check with priority:
-    # 1. Active view (if open)
-    # 2. Context files (single match only - error if multiple)
-    # 3. Other open views
-    # 4. Project folders (normal resolution below)
+    # Bare filename: resolve by priority before falling through to roots.
+    #   1. Active view  2. Context files (error if ambiguous)
+    #   3. Other open views  4. Allowed roots (below)
     if os.path.dirname(normalized) == "" or os.path.dirname(normalized) == ".":
         # Priority 1: Active view
         if window:
@@ -365,7 +393,7 @@ def resolve_path(
                     except OSError:
                         return found, None
 
-        # Priority 2: Context files (error if multiple matches)
+        # Priority 2: Context files (error if ambiguous)
         if context_files:
             found, err = _find_in_context_files(normalized, context_files)
             if err:
@@ -387,7 +415,7 @@ def resolve_path(
                     except OSError:
                         return found, None
 
-    # Normal: absolute paths or paths relative to allowed roots.
+    # Absolute path or relative path — resolve against allowed roots.
     if os.path.isabs(normalized):
         try:
             rp = os.path.realpath(normalized)
@@ -462,6 +490,9 @@ def execute_view(
     if resolved is None:
         return "Error: Path resolution failed", True
 
+    if not ensure_under_root(resolved, allowed_roots):
+        return "Error: Path is outside allowed project roots.", True
+
     if os.path.isdir(resolved):
         try:
             with os.scandir(resolved) as it:
@@ -489,6 +520,9 @@ def execute_view(
     except OSError as e:
         return "Error: Could not read file: {0}".format(str(e)), True
 
+    lines = content.splitlines()
+    total = len(lines)
+
     if view_range and isinstance(view_range, list) and len(view_range) >= 2:
         try:
             start_raw = view_range[0]
@@ -501,14 +535,20 @@ def execute_view(
                 True,
             )
         start_line = max(1, start_line)
-        lines = content.splitlines()
-        total = len(lines)
         if end_line == -1:
             end_line = total
         else:
             end_line = min(total, max(1, end_line))
+
+        # Empty file with an explicit range: return empty content rather
+        # than treating it as an error — viewing an empty file is valid.
+        if total == 0:
+            _record_read(resolved, read_file_timestamps)
+            return "", False
+
         if start_line > end_line or start_line > total:
             return "Error: Invalid view_range", True
+
         content = "\n".join(
             "{0}: {1}".format(i, line)
             for i, line in enumerate(
@@ -516,7 +556,6 @@ def execute_view(
             )
         )
     else:
-        lines = content.splitlines()
         content = "\n".join(
             "{0}: {1}".format(i, line) for i, line in enumerate(lines, start=1)
         )
@@ -526,7 +565,11 @@ def execute_view(
         and max_characters > 0
         and len(content) > max_characters
     ):
-        content = content[:max_characters] + "\n... (truncated)"
+        # Truncate on a line boundary to avoid splitting a line-number prefix.
+        cut = content.rfind("\n", 0, max_characters)
+        if cut <= 0:
+            cut = max_characters
+        content = content[:cut] + "\n... (truncated)"
 
     _record_read(resolved, read_file_timestamps)
     return content, False
@@ -589,6 +632,9 @@ def execute_str_replace(
             True,
         )
 
+    match_index = content.find(old_str)
+    match_line = content.count("\n", 0, match_index) + 1 if match_index >= 0 else 0
+
     new_content = content.replace(old_str, new_str, 1)
     try:
         _write_file_with_encoding(resolved, new_content, enc, le)
@@ -598,7 +644,7 @@ def execute_str_replace(
         ), True
 
     _after_write_update(resolved, read_file_timestamps)
-    return "Successfully replaced text at exactly one location.", False
+    return "Successfully replaced text at line {0}.".format(match_line), False
 
 
 def execute_create(
@@ -649,15 +695,25 @@ def execute_create(
     if file_text.startswith("\ufeff"):
         file_text = file_text[1:]
 
-    # Use ``"x"`` (exclusive create) so the create fails atomically if the
-    # file was created between the ``os.path.exists`` check above and this
-    # write — safer than plain ``"w"`` which would clobber the racer.
+    raw = file_text.encode("utf-8")
+
     try:
-        with open(resolved, "x", encoding="utf-8", newline="") as f:
-            f.write(file_text)
+        fd = os.open(resolved, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        os.close(fd)
     except FileExistsError:
         return "Error: File already exists.", True
     except OSError as e:
+        return "Error: Permission denied. Cannot write to file. {0}".format(
+            str(e)
+        ), True
+
+    try:
+        _atomic_write_bytes(resolved, raw)
+    except OSError as e:
+        try:
+            os.unlink(resolved)  # Remove placeholder so no zero-byte file lingers.
+        except OSError:
+            pass
         return "Error: Permission denied. Cannot write to file. {0}".format(
             str(e)
         ), True
@@ -702,13 +758,11 @@ def execute_insert(
         return stale, True
 
     try:
-        raw, enc, le = _read_file_with_encoding(resolved)
+        content, enc, le = _read_file_with_encoding(resolved)
     except OSError as e:
         return "Error: Could not read file: {0}".format(str(e)), True
 
-    lines = raw.splitlines(keepends=True)
-    if not lines and raw:
-        lines = [raw]
+    lines = content.splitlines(keepends=True)
 
     try:
         insert_line = int(insert_line)
@@ -721,21 +775,15 @@ def execute_insert(
     if insert_line > len(lines):
         insert_line = len(lines)
 
-    if insert_line == 0:
-        new_content = (
-            insert_text
-            + ("\n" if lines and not lines[0].endswith("\n") else "")
-            + "".join(lines)
-        )
-    else:
-        before = lines[:insert_line]
-        after = lines[insert_line:]
-        new_content = (
-            "".join(before)
-            + insert_text
-            + ("\n" if after and not insert_text.endswith("\n") else "")
-            + "".join(after)
-        )
+    needs_separator = bool(lines[insert_line:]) and not insert_text.endswith("\n")
+    before = lines[:insert_line]
+    after = lines[insert_line:]
+    new_content = (
+        "".join(before)
+        + insert_text
+        + ("\n" if needs_separator else "")
+        + "".join(after)
+    )
 
     try:
         _write_file_with_encoding(resolved, new_content, enc, le)
@@ -761,15 +809,12 @@ def run_text_editor_tool(
     """
     Execute a single text editor tool call and return a tool_result block.
 
-    input_params must contain command, path, and command-specific fields.
+    ``input_params`` must contain ``command``, ``path``, and any command-
+    specific fields. Returns a ``{"type": "tool_result", ...}`` dict.
 
-    Returns a dict for API user content, e.g. type tool_result with
-    tool_use_id, content, and is_error.
-
-    Args:
-        read_file_timestamps: Optional map of realpath -> mtime from successful
-            ``view`` calls in this agent loop; required for str_replace/insert
-            stale checks. Omitted or None disables those checks.
+    ``read_file_timestamps`` is a realpath -> mtime map populated by ``view``
+    calls; when provided, str_replace and insert reject writes to files that
+    have changed since they were last read. Pass None to skip those checks.
     """
     allowed_roots = get_allowed_roots(window, settings)
     if not allowed_roots:
