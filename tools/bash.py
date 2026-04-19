@@ -984,7 +984,7 @@ def _prompt_user_for_bash(
     )
     request = ConfirmationRequest(
         title="Bash",
-        icon="⚪️",
+        icon="ℹ️",
         message_markdown=message_markdown,
         question="Do you want to proceed?",
         options=options,
