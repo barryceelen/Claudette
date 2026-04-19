@@ -64,6 +64,38 @@
 		]
 	},
 	{
+		"keys": ["tab"],
+		"command": "claudette_confirmation_next",
+		"context": [
+			{
+				"key": "setting.claudette_is_chat_view",
+				"operator": "equal",
+				"operand": true
+			},
+			{
+				"key": "setting.claudette_awaiting_confirmation",
+				"operator": "equal",
+				"operand": true
+			}
+		]
+	},
+	{
+		"keys": ["shift+tab"],
+		"command": "claudette_confirmation_prev",
+		"context": [
+			{
+				"key": "setting.claudette_is_chat_view",
+				"operator": "equal",
+				"operand": true
+			},
+			{
+				"key": "setting.claudette_awaiting_confirmation",
+				"operator": "equal",
+				"operand": true
+			}
+		]
+	},
+	{
 		"keys": ["enter"],
 		"command": "claudette_confirmation_confirm",
 		"context": [

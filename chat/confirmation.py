@@ -138,7 +138,7 @@ _PHANTOM_STYLES = """
 <style>
     body#claudette-confirmation {
         margin: 0;
-        padding: 0.4rem;
+        padding: 0.4rem 0 0;
     }
     .title {
         font-weight: bold;
@@ -196,8 +196,7 @@ def _build_phantom_html(request: ConfirmationRequest, current_index: int) -> str
     )
     options_html = _options_to_minihtml(request.options, current_index)
     hint_html = (
-        '<div class="hint">Esc to cancel - Enter to confirm - '
-        "↑/↓ to select option</div>"
+        '<div class="hint">Esc to cancel - Tab to amend</div>'
     )
     return (
         '<body id="claudette-confirmation">'
