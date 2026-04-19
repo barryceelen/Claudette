@@ -237,8 +237,7 @@ class ClaudetteChatView:
         return (
             '<body id="claudette-tool-status">'
             "<style>"
-            "body#claudette-tool-status {{ padding-top: 0.6rem; }}"
-            "div.claudette-tool-status-line {{ margin-top: 0.6rem; }}"
+            "body#claudette-tool-status {{ padding-top: 0.4rem; }}"
             "</style>"
             '<div class="claudette-tool-status-line">ℹ️ {0} {1}</div>'
             "</body>"
