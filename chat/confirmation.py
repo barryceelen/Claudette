@@ -8,9 +8,7 @@ via window commands bound in ``Default.sublime-keymap``; the worker blocks on a
 ``threading.Event`` until the user picks an option or the view is closed.
 
 The whole prompt — title, body, question, options, and the key-hint line — is
-one ``sublime.LAYOUT_BLOCK`` phantom anchored at the end of the chat view. This
-keeps the chat scrollback completely untouched: no ``set_read_only`` toggling,
-no inserted/deleted text, and finalize is just a ``PhantomSet.update([])`` call.
+one ``sublime.LAYOUT_BLOCK`` phantom anchored at the end of the chat view.
 """
 
 import re
@@ -111,15 +109,23 @@ def _markdown_to_minihtml(md: str) -> str:
 
 
 def _options_to_minihtml(options, current_index: int) -> str:
-    """Render the option list, marking the current selection."""
+    """Render the option list, marking the current selection.
+
+    Each option is rendered as a clickable minihtml link whose ``href`` is
+    ``select:<index>``; the phantom's ``on_navigate`` handler (see
+    ``ConfirmationManager._on_phantom_navigate``) confirms the matching
+    option when clicked.
+    """
     parts = []
     for i, opt in enumerate(options):
         is_current = i == current_index
         cls = "option current" if is_current else "option"
         marker = "›" if is_current else "&nbsp;"
         parts.append(
-            '<div class="{0}">{1} {2}. {3}</div>'.format(
-                cls, marker, i + 1, _escape_html(opt.label)
+            '<div class="{0}">{1} '
+            '<a class="option-link" href="select:{2}">{3}. {4}</a>'
+            "</div>".format(
+                cls, marker, i, i + 1, _escape_html(opt.label)
             )
         )
     return "".join(parts)
@@ -131,7 +137,8 @@ def _options_to_minihtml(options, current_index: int) -> str:
 _PHANTOM_STYLES = """
 <style>
     body#claudette-confirmation {
-        margin: 0.4rem 0;
+        margin: 0;
+        padding: 0.4rem;
     }
     .title {
         font-weight: bold;
@@ -156,6 +163,13 @@ _PHANTOM_STYLES = """
     }
     .option.current {
         font-weight: bold;
+        color: var(--accent);
+    }
+    a.option-link {
+        text-decoration: none;
+        color: var(--foreground);
+    }
+    .option.current a.option-link {
         color: var(--accent);
     }
     .hint {
@@ -183,7 +197,7 @@ def _build_phantom_html(request: ConfirmationRequest, current_index: int) -> str
     options_html = _options_to_minihtml(request.options, current_index)
     hint_html = (
         '<div class="hint">Esc to cancel - Enter to confirm - '
-        "↑/↓ or number to select option</div>"
+        "↑/↓ to select option</div>"
     )
     return (
         '<body id="claudette-confirmation">'
@@ -317,8 +331,9 @@ class ConfirmationManager:
         )
         anchor = sublime.Region(view.size(), view.size())
         html = _build_phantom_html(request, initial_index)
+        on_navigate = self._make_navigate_handler(vid)
         phantom_set.update([
-            sublime.Phantom(anchor, html, sublime.LAYOUT_BLOCK, None)
+            sublime.Phantom(anchor, html, sublime.LAYOUT_BLOCK, on_navigate)
         ])
         # Make sure the phantom is visible; without this the user may need
         # to scroll down to find the prompt in a long chat.
@@ -387,10 +402,45 @@ class ConfirmationManager:
     def _update_selection(self, view, state, new_index: int) -> None:
         html = _build_phantom_html(state["request"], new_index)
         anchor = sublime.Region(view.size(), view.size())
+        on_navigate = self._make_navigate_handler(view.id())
         state["phantom_set"].update([
-            sublime.Phantom(anchor, html, sublime.LAYOUT_BLOCK, None)
+            sublime.Phantom(anchor, html, sublime.LAYOUT_BLOCK, on_navigate)
         ])
         state["current_index"] = new_index
+
+    def _make_navigate_handler(self, vid: int):
+        """Build the ``on_navigate`` callback for a view's confirmation phantom.
+
+        The phantom encodes each option as ``href="select:<index>"``. Clicking
+        it selects that option and finalizes the prompt (same behaviour as
+        pressing the matching number key).
+        """
+
+        def on_navigate(href: str) -> None:
+            if not href.startswith("select:"):
+                return
+            try:
+                idx = int(href[len("select:"):])
+            except ValueError:
+                return
+            state = self._states.get(vid)
+            if state is None:
+                return
+            view = None
+            if self.window is not None:
+                for v in self.window.views():
+                    if v.id() == vid:
+                        view = v
+                        break
+            if view is None:
+                return
+            options = state["request"].options
+            if idx < 0 or idx >= len(options):
+                return
+            self._update_selection(view, state, idx)
+            self._complete(view, state, idx)
+
+        return on_navigate
 
     def _complete(self, view, state, index: int) -> None:
         option = state["request"].options[index]
