@@ -138,7 +138,7 @@ _PHANTOM_STYLES = """
 <style>
     body#claudette-confirmation {
         margin: 0;
-        padding: 0.4rem 0 0;
+        padding: 1rem 0 0;
     }
     .title {
         font-weight: bold;

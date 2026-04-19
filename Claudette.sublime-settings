@@ -118,6 +118,14 @@
 	// Optional: extra allowed directory roots for agent tools (text editor and bash; absolute paths).
 	// By default access to folders or files that are open in the sidebar is allowed.
 	"allowed_tool_roots": [],
+	// CLAUDE.md (project memory): when true and a CLAUDE.md file exists at a
+	// project root or any ancestor directory, its contents are prepended to
+	// every request as cached system context. Any nested CLAUDE.md files found
+	// under a project root are surfaced as a bullet list so Claude knows to
+	// read them with the text_editor tool when it works in those subdirectories.
+	// Discovery uses the same roots as the text editor and bash tools (sidebar
+	// folders + allowed_tool_roots). Set to false to disable entirely.
+	"claude_md": true,
 	// When true, Claude can search the web for up-to-date information. Only works
 	// with supported models (e.g. Claude Opus 4.6, 4.5, Sonnet 4.5, Haiku 4.5).
 	// Each search is billed by Anthropic in addition to token costs — see their

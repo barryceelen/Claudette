@@ -297,6 +297,18 @@ class ClaudetteClaudeAPI:
                         }
                     )
 
+        if chat_view and self.settings.get("claude_md", True):
+            view = getattr(chat_view, "view", chat_view)
+            window_cmd = view.window() if view else None
+            if window_cmd:
+                from ..context.claude_md import build_claude_md_system_block
+
+                claude_md_block = build_claude_md_system_block(
+                    window_cmd, self.settings
+                )
+                if claude_md_block:
+                    system_messages.append(claude_md_block)
+
         return system_messages
 
     def _stream_one_turn(

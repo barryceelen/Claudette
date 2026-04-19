@@ -25,6 +25,7 @@ from .chat.confirmation import (
     ClaudetteConfirmationPrevCommand,
     ClaudetteConfirmationSelectNumberCommand,
 )
+from .chat.init_claude_md import ClaudetteInitClaudeMdCommand
 from .chat.stop_request import ClaudetteStopRequestCommand
 from .context.add_current_file import (
     ClaudetteContextAddCurrentFileCommand,
