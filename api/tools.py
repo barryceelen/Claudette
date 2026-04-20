@@ -4,6 +4,61 @@ Builds the JSON tool config dicts that go into the API request body.
 This is tool *configuration*, not tool *execution* — execution lives in tools/.
 """
 
+from typing import List, Set, Tuple
+
+from ..constants import PLUGIN_NAME
+
+
+# Cache of (allowed, blocked) tuples we've already warned about so a
+# misconfiguration is reported once per unique value. Reset implicitly at
+# process start; re-fires if the user edits settings and hits the conflict
+# again with a different list.
+_warned_domain_conflicts: Set[Tuple[Tuple[str, ...], Tuple[str, ...]]] = set()
+
+
+def _clean_domain_list(value) -> List[str]:
+    """Normalize a domain-list setting into a clean list of strings.
+
+    Drops non-string entries and values that are empty after trimming,
+    collapses duplicates, and preserves original order. Returns an empty
+    list if ``value`` is not a list at all, so callers can treat a missing
+    or malformed setting as "nothing configured" without extra checks.
+    """
+    if not isinstance(value, list):
+        return []
+    seen: Set[str] = set()
+    out: List[str] = []
+    for d in value:
+        if not isinstance(d, str):
+            continue
+        s = d.strip()
+        if not s or s in seen:
+            continue
+        seen.add(s)
+        out.append(s)
+    return out
+
+
+def _warn_both_domain_lists_once(
+    allowed: List[str], blocked: List[str]
+) -> None:
+    """Log a one-time warning when both domain lists are populated.
+
+    The Anthropic web-search tool rejects sending ``allowed_domains`` and
+    ``blocked_domains`` The warning surfaces the misconfiguration in the Sublime
+    console so users don't wonder why their block list has no effect.
+    """
+    key = (tuple(allowed), tuple(blocked))
+    if key in _warned_domain_conflicts:
+        return
+    _warned_domain_conflicts.add(key)
+    print(
+        "{0}: both web_search_allowed_domains and web_search_blocked_domains "
+        "are set; the Anthropic API rejects both at once so "
+        "web_search_blocked_domains is being ignored. Clear one of the two "
+        "lists to silence this warning.".format(PLUGIN_NAME)
+    )
+
 
 def build_web_search_tool_def(settings):
     """Build web search tool definition from settings, or None if disabled.
@@ -29,37 +84,43 @@ def build_web_search_tool_def(settings):
         "max_uses": max_uses,
     }
 
-    allowed = settings.get("web_search_allowed_domains")
-    blocked = settings.get("web_search_blocked_domains")
-    if allowed and isinstance(allowed, list) and len(allowed) > 0:
-        tool_def["allowed_domains"] = [
-            str(d).strip() for d in allowed if str(d).strip()
-        ]
-    elif blocked and isinstance(blocked, list) and len(blocked) > 0:
-        tool_def["blocked_domains"] = [
-            str(d).strip() for d in blocked if str(d).strip()
-        ]
+    allowed = _clean_domain_list(settings.get("web_search_allowed_domains"))
+    blocked = _clean_domain_list(settings.get("web_search_blocked_domains"))
+    if allowed and blocked:
+        _warn_both_domain_lists_once(allowed, blocked)
+    if allowed:
+        tool_def["allowed_domains"] = allowed
+    elif blocked:
+        tool_def["blocked_domains"] = blocked
 
     user_loc = settings.get("web_search_user_location")
     if (
-        user_loc
-        and isinstance(user_loc, dict)
+        isinstance(user_loc, dict)
         and user_loc.get("type") == "approximate"
-        and (
-            user_loc.get("city")
-            or user_loc.get("country")
-            or user_loc.get("timezone")
-        )
     ):
-        tool_def["user_location"] = {
-            "type": "approximate",
-            "city": str(user_loc.get("city", "")),
-            "region": str(user_loc.get("region", "")),
-            "country": str(user_loc.get("country", "")),
-            "timezone": str(user_loc.get("timezone", "")),
-        }
+        # Only include keys the user actually populated. The Anthropic API
+        # treats empty strings as data rather than absence, so sending
+        # ``"region": ""`` for a user who set only ``city`` subtly degrades
+        # localization. Trim and skip anything that doesn't look like a
+        # meaningful value.
+        loc_out = {"type": "approximate"}
+        for key in ("city", "region", "country", "timezone"):
+            val = user_loc.get(key)
+            if isinstance(val, str) and val.strip():
+                loc_out[key] = val.strip()
+        if len(loc_out) > 1:
+            tool_def["user_location"] = loc_out
 
     return tool_def
+
+
+def get_web_search_cost_per_search(settings) -> float:
+    """Return the per-search cost, coerced to float with a safe fallback."""
+    default = 0.01
+    try:
+        return float(settings.get("web_search_cost_per_search", default))
+    except (TypeError, ValueError):
+        return default
 
 
 def build_text_editor_tool_def(settings, model):
@@ -94,6 +155,21 @@ def build_text_editor_tool_def(settings, model):
             pass
 
     return tool_def
+
+
+def build_bash_tool_def(settings):
+    """Build bash tool definition from settings, or None if disabled.
+
+    Args:
+        settings: Sublime Text settings object (or dict-like).
+
+    Returns:
+        dict or None: The bash tool definition for the API request.
+    """
+    if not settings.get("bash_tool", False):
+        return None
+
+    return {"type": "bash_20250124", "name": "bash"}
 
 
 def parse_web_search_items(items):
@@ -132,4 +208,11 @@ def format_search_results(source_lines):
     """
     if not source_lines:
         return ""
-    return "### Search Results\n\n" + "\n".join(source_lines) + "\n\n"
+    seen = set()
+    deduped = []
+    for line in source_lines:
+        if line in seen:
+            continue
+        seen.add(line)
+        deduped.append(line)
+    return "## Sources\n\n" + "\n".join(deduped) + "\n"

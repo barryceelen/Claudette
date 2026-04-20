@@ -47,9 +47,10 @@ def calculate_cost(
         return 0
 
     # Pricing is per 1M tokens
-    input_cost = ((input_tokens - cache_read_tokens) / 1_000_000) * price_tier[
-        "input"
-    ]
+    # Non-cached input tokens are charged at the full input rate.
+    # Clamp to zero in case cache tokens exceed input_tokens.
+    non_cached_tokens = max(0, input_tokens - cache_read_tokens - cache_write_tokens)
+    input_cost = (non_cached_tokens / 1_000_000) * price_tier["input"]
     output_cost = (output_tokens / 1_000_000) * price_tier["output"]
     cache_write_cost = (cache_write_tokens / 1_000_000) * price_tier.get(
         "cache_write", 0
@@ -100,26 +101,46 @@ def update_session_stats(
 
 
 def format_status_message(
-    input_tokens, output_tokens, cache_info, current_cost, session_cost
+    input_tokens,
+    output_tokens,
+    current_cost,
+    session_cost,
+    cache_read_tokens=0,
+    cache_write_tokens=0,
+    web_search_requests=0,
 ):
     """Format a status bar message with token and cost information.
 
     Args:
         input_tokens: Number of input tokens for this message.
         output_tokens: Number of output tokens for this message.
-        cache_info: A string like " (cache read: 1,234)" or empty.
         current_cost: Cost of the current message.
         session_cost: Total session cost so far.
+        cache_read_tokens: Number of tokens read from cache.
+        cache_write_tokens: Number of tokens written to cache.
+        web_search_requests: Number of web searches in this message.
 
     Returns:
         str: The formatted status message.
     """
-    status = "Tokens: {0:,} sent, {1:,} received{2}.".format(
-        input_tokens, output_tokens, cache_info
-    )
+    parts = []
+    parts.append("{0:,} in, {1:,} out".format(input_tokens, output_tokens))
+
+    cache_parts = []
+    if cache_read_tokens > 0:
+        cache_parts.append("{0:,} cache read".format(cache_read_tokens))
+    if cache_write_tokens > 0:
+        cache_parts.append("{0:,} cache write".format(cache_write_tokens))
+    if cache_parts:
+        parts.append(", ".join(cache_parts))
+
+    status = "Tokens: " + ", ".join(parts) + "."
+
+    if web_search_requests > 0:
+        status += " Web searches: {0}.".format(web_search_requests)
 
     if session_cost > 0:
-        status += " Cost: ${0:.4f} message, ${1:.4f} session.".format(
+        status += " Cost: ${0:.2f} (${1:.2f} session)".format(
             current_cost, session_cost
         )
 
