@@ -36,11 +36,14 @@ from .errors import (
 )
 from .session_stats import format_status_message, update_session_stats
 from .tools import (
+    WEB_FETCH_ERROR_MESSAGES,
     build_bash_tool_def,
     build_text_editor_tool_def,
+    build_web_fetch_tool_def,
     build_web_search_tool_def,
     format_search_results,
     get_web_search_cost_per_search,
+    parse_web_fetch_result,
     parse_web_search_items,
 )
 
@@ -152,11 +155,9 @@ class ClaudetteClaudeAPI:
                 "- Applies to all future chats until you change it in "
                 "`Claudette.sublime-settings`."
             ),
-            question="Enable web search?",
+            question="",
             options=[
-                ConfirmationOption(
-                    id="yes", label="Yes, enable web search"
-                ),
+                ConfirmationOption(id="yes", label="Yes, enable web search"),
                 ConfirmationOption(id="no", label="No"),
             ],
             cancel_index=1,
@@ -174,6 +175,61 @@ class ClaudetteClaudeAPI:
             return False
 
         self.settings.set("web_search", result == "yes")
+        sublime.save_settings(SETTINGS_FILE)
+        return result == "yes"
+
+    def _maybe_offer_web_fetch_enable(self, chat_view) -> bool:
+        """One-time prompt to turn on ``web_fetch`` globally when unset.
+
+        The Anthropic web_fetch tool runs server-side, so we cannot prompt per
+        URL.
+
+        Returns True if the user just accepted.
+        """
+        if self.settings.has("web_fetch"):
+            return False
+
+        view = getattr(chat_view, "view", chat_view)
+        if view is None:
+            return False
+        window = view.window()
+        if window is None:
+            return False
+
+        from ..chat.chat_view import ClaudetteChatView
+        from ..chat.confirmation import (
+            ConfirmationOption,
+            ConfirmationRequest,
+        )
+
+        mgr = ClaudetteChatView._instances.get(window.id())
+
+        if mgr is None or mgr.confirmation is None:
+            return False
+
+        request = ConfirmationRequest(
+            title="Enable Web Fetch?",
+            icon="🌍",
+            message_markdown=(
+                "Let Claude pull full content from URLs already in the "
+                "conversation (your messages, prior web search hits, or "
+                "earlier fetches). Fetched content counts toward input tokens.\n\n"
+            ),
+            question="",
+            options=[
+                ConfirmationOption(id="yes", label="Yes, enable web fetch"),
+                ConfirmationOption(id="no", label="No"),
+            ],
+            cancel_index=1,
+        )
+        result = mgr.request_confirmation(
+            request, view_id=view.id(), spinner=self.spinner
+        )
+
+        if result not in ("yes", "no"):
+            return False
+
+        self.settings.set("web_fetch", result == "yes")
         sublime.save_settings(SETTINGS_FILE)
         return result == "yes"
 
@@ -382,6 +438,7 @@ class ClaudetteClaudeAPI:
         cache_read_tokens = 0
         cache_write_tokens = 0
         web_search_requests = 0
+        web_fetch_requests = 0
 
         ssl_context = self._get_ssl_context()
         with urllib.request.urlopen(
@@ -466,16 +523,22 @@ class ClaudetteClaudeAPI:
                     if idx not in block_order:
                         block_order.append(idx)
 
-                    if (
-                        btype == "server_tool_use"
-                        and block.get("name") == "web_search"
-                    ):
-                        sublime.set_timeout(
-                            lambda: sublime.status_message(
-                                "Searching the web..."
-                            ),
-                            0,
-                        )
+                    if btype == "server_tool_use":
+                        tool_name = block.get("name")
+                        if tool_name == "web_search":
+                            sublime.set_timeout(
+                                lambda: sublime.status_message(
+                                    "Searching the web..."
+                                ),
+                                0,
+                            )
+                        elif tool_name == "web_fetch":
+                            sublime.set_timeout(
+                                lambda: sublime.status_message(
+                                    "Fetching URL..."
+                                ),
+                                0,
+                            )
                     elif btype == "web_search_tool_result":
                         items_lines, has_error = parse_web_search_items(
                             block.get("content", [])
@@ -489,6 +552,22 @@ class ClaudetteClaudeAPI:
                             sublime.set_timeout(
                                 lambda: sublime.status_message(
                                     "Web search complete"
+                                ),
+                                0,
+                            )
+                    elif btype == "web_fetch_tool_result":
+                        source_line, error_code = parse_web_fetch_result(
+                            block.get("content")
+                        )
+                        if error_code:
+                            self._report_web_fetch_error(
+                                error_code, error_view
+                            )
+                        elif source_line:
+                            sources_lines.append(source_line)
+                            sublime.set_timeout(
+                                lambda: sublime.status_message(
+                                    "Web fetch complete"
                                 ),
                                 0,
                             )
@@ -577,6 +656,9 @@ class ClaudetteClaudeAPI:
                         web_search_requests = stu.get(
                             "web_search_requests", web_search_requests
                         )
+                        web_fetch_requests = stu.get(
+                            "web_fetch_requests", web_fetch_requests
+                        )
 
                 elif event_type == "message_stop":
                     # Stream is finalized; the readline loop will exit
@@ -599,7 +681,8 @@ class ClaudetteClaudeAPI:
             "cache_read_input_tokens": cache_read_tokens,
             "cache_write_input_tokens": cache_write_tokens,
             "server_tool_use": {
-                "web_search_requests": web_search_requests
+                "web_search_requests": web_search_requests,
+                "web_fetch_requests": web_fetch_requests,
             },
         }
 
@@ -649,6 +732,23 @@ class ClaudetteClaudeAPI:
             )
         else:
             err_msg = "Web search error: {0}".format(error_code)
+
+        def show(msg=err_msg, v=error_view):
+            if v is not None and v.window() is not None:
+                claudette_chat_status_message(v.window(), msg, "⚠️")
+            sublime.status_message(msg)
+
+        sublime.set_timeout(show, 0)
+
+    def _report_web_fetch_error(self, error_code, error_view):
+        """Surface a web-fetch error as a chat-status message."""
+        friendly = WEB_FETCH_ERROR_MESSAGES.get(error_code)
+        if friendly:
+            err_msg = "Web fetch error: {0} ({1})".format(
+                friendly, error_code
+            )
+        else:
+            err_msg = "Web fetch error: {0}".format(error_code)
 
         def show(msg=err_msg, v=error_view):
             if v is not None and v.window() is not None:
@@ -720,6 +820,11 @@ class ClaudetteClaudeAPI:
         if web_search_tool:
             tools_list.append(web_search_tool)
 
+        self._maybe_offer_web_fetch_enable(chat_view)
+        web_fetch_tool = build_web_fetch_tool_def(self.settings)
+        if web_fetch_tool:
+            tools_list.append(web_fetch_tool)
+
         # chat_view may be sublime View or ClaudetteChatView (.view,
         # .set_tool_status, .clear_tool_status).
         view_for_api = getattr(chat_view, "view", chat_view)
@@ -786,6 +891,7 @@ class ClaudetteClaudeAPI:
             acc_cache_read_tokens = 0
             acc_cache_write_tokens = 0
             acc_web_search_requests = 0
+            acc_web_fetch_requests = 0
             acc_sources_lines = []
 
             while True:
@@ -857,6 +963,9 @@ class ClaudetteClaudeAPI:
                 acc_web_search_requests += (
                     stu.get("web_search_requests", 0) or 0
                 )
+                acc_web_fetch_requests += (
+                    stu.get("web_fetch_requests", 0) or 0
+                )
                 acc_sources_lines.extend(turn_sources or [])
 
                 # If the API omits stop_reason but we got text content,
@@ -897,6 +1006,7 @@ class ClaudetteClaudeAPI:
                             "tool_use",
                             "server_tool_use",
                             "web_search_tool_result",
+                            "web_fetch_tool_result",
                         )
                     ]
                     bash_chat_echo_seen = set()
@@ -1136,6 +1246,7 @@ class ClaudetteClaudeAPI:
                         acc_output_tokens,
                         current_cost,
                         acc_web_search_requests,
+                        acc_web_fetch_requests,
                     )
                     if sess:
                         status_msg = format_status_message(
@@ -1146,6 +1257,7 @@ class ClaudetteClaudeAPI:
                             cache_read_tokens=acc_cache_read_tokens,
                             cache_write_tokens=acc_cache_write_tokens,
                             web_search_requests=acc_web_search_requests,
+                            web_fetch_requests=acc_web_fetch_requests,
                         )
                         sublime.set_timeout(
                             lambda s=status_msg: sublime.status_message(s), 100
@@ -1160,6 +1272,12 @@ class ClaudetteClaudeAPI:
                             sess["web_search_requests"]
                             if sess
                             else acc_web_search_requests
+                        ),
+                        "web_fetch_requests": acc_web_fetch_requests,
+                        "session_web_fetch_requests": (
+                            sess["web_fetch_requests"]
+                            if sess
+                            else acc_web_fetch_requests
                         ),
                     }
                     sublime.set_timeout(
@@ -1246,7 +1364,11 @@ class ClaudetteClaudeAPI:
 
             self._maybe_offer_web_search_enable(chat_view)
             web_search_tool = build_web_search_tool_def(self.settings)
-            tools_list = [web_search_tool] if web_search_tool else None
+            self._maybe_offer_web_fetch_enable(chat_view)
+            web_fetch_tool = build_web_fetch_tool_def(self.settings)
+            tools_list = [
+                t for t in (web_search_tool, web_fetch_tool) if t
+            ] or None
 
             try:
                 (
@@ -1296,6 +1418,7 @@ class ClaudetteClaudeAPI:
             )
             stu = usage.get("server_tool_use") or {}
             web_search_requests = stu.get("web_search_requests", 0) or 0
+            web_fetch_requests = stu.get("web_fetch_requests", 0) or 0
 
             sources_text = format_search_results(sources_lines)
             if sources_text:
@@ -1323,6 +1446,7 @@ class ClaudetteClaudeAPI:
                 output_tokens,
                 current_cost,
                 web_search_requests,
+                web_fetch_requests,
             )
             session_cost = sess["cost"] if sess else current_cost
 
@@ -1334,6 +1458,7 @@ class ClaudetteClaudeAPI:
                 cache_read_tokens=cache_read_tokens,
                 cache_write_tokens=cache_write_tokens,
                 web_search_requests=web_search_requests,
+                web_fetch_requests=web_fetch_requests,
             )
             sublime.set_timeout(
                 lambda s=status_msg: sublime.status_message(s), 100
@@ -1349,6 +1474,12 @@ class ClaudetteClaudeAPI:
                     sess["web_search_requests"]
                     if sess
                     else web_search_requests
+                ),
+                "web_fetch_requests": web_fetch_requests,
+                "session_web_fetch_requests": (
+                    sess["web_fetch_requests"]
+                    if sess
+                    else web_fetch_requests
                 ),
             }
             sublime.set_timeout(

@@ -8,6 +8,7 @@ def _default_session_stats():
         "output_tokens": 0,
         "cost": 0.0,
         "web_search_requests": 0,
+        "web_fetch_requests": 0,
     }
 
 
@@ -63,7 +64,12 @@ def calculate_cost(
 
 
 def update_session_stats(
-    view, input_tokens, output_tokens, cost, web_search_requests=0
+    view,
+    input_tokens,
+    output_tokens,
+    cost,
+    web_search_requests=0,
+    web_fetch_requests=0,
 ):
     """Update the session stats stored on a view's settings.
 
@@ -76,6 +82,7 @@ def update_session_stats(
         output_tokens: Tokens to add to session output total.
         cost: Cost to add to session total.
         web_search_requests: Web search requests to add to session total.
+        web_fetch_requests: web_fetch tool calls to add to session total.
 
     Returns:
         dict: The updated session stats, or None if view has no settings.
@@ -88,12 +95,17 @@ def update_session_stats(
 
     if "web_search_requests" not in sess:
         sess["web_search_requests"] = 0
+    if "web_fetch_requests" not in sess:
+        sess["web_fetch_requests"] = 0
 
     sess["input_tokens"] = sess.get("input_tokens", 0) + input_tokens
     sess["output_tokens"] = sess.get("output_tokens", 0) + output_tokens
     sess["cost"] = sess.get("cost", 0.0) + cost
     sess["web_search_requests"] = (
         sess.get("web_search_requests", 0) + web_search_requests
+    )
+    sess["web_fetch_requests"] = (
+        sess.get("web_fetch_requests", 0) + web_fetch_requests
     )
 
     settings.set("claudette_session_stats", sess)
@@ -108,6 +120,7 @@ def format_status_message(
     cache_read_tokens=0,
     cache_write_tokens=0,
     web_search_requests=0,
+    web_fetch_requests=0,
 ):
     """Format a status bar message with token and cost information.
 
@@ -119,6 +132,7 @@ def format_status_message(
         cache_read_tokens: Number of tokens read from cache.
         cache_write_tokens: Number of tokens written to cache.
         web_search_requests: Number of web searches in this message.
+        web_fetch_requests: Number of web_fetch tool uses in this message.
 
     Returns:
         str: The formatted status message.
@@ -138,6 +152,9 @@ def format_status_message(
 
     if web_search_requests > 0:
         status += " Web searches: {0}.".format(web_search_requests)
+
+    if web_fetch_requests > 0:
+        status += " Web fetches: {0}.".format(web_fetch_requests)
 
     if session_cost > 0:
         status += " Cost: ${0:.2f} (${1:.2f} session)".format(

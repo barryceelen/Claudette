@@ -150,6 +150,29 @@
 	//     "country": "US",
 	//     "timezone": "America/Los_Angeles"
 	// },
+	// When true, Claude can fetch the contents of URLs that already appear in
+	// the conversation (user messages, prior web-search results, etc.). Fetches
+	// run on Anthropic's infrastructure, not on your machine — we cannot prompt
+	// per URL, so the first time a request would use the tool you'll get a
+	// one-time confirmation in the chat. After that it stays on until you set
+	// web_fetch to false here. For security, prefer narrowing with
+	// web_fetch_allowed_domains. There is no additional charge beyond the tokens
+	// the fetched content consumes.
+	// https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-fetch-tool
+	// "web_fetch": false,
+	// Max fetches per turn. Clamped to the range 1..20 by Claudette.
+	"web_fetch_max_uses": 5,
+	// Optional: only fetch from these domains (e.g. ["example.com", "docs.example.com"]).
+	// Do not set both web_fetch_allowed_domains and web_fetch_blocked_domains.
+	"web_fetch_allowed_domains": [],
+	// Optional: never fetch from these domains.
+	// Do not set both web_fetch_allowed_domains and web_fetch_blocked_domains.
+	"web_fetch_blocked_domains": [],
+	// Optional: cap fetched content length (approximate tokens). Use this to
+	// avoid blowing the context window on large pages/PDFs. 0 = no cap.
+	"web_fetch_max_content_tokens": 0,
+	// When true, Claude can inline citations to fetched documents in its reply.
+	"web_fetch_citations": true,
 	// Claude pricing per 1M tokens (as of April 2026)
 	// https://www.anthropic.com/pricing#702702
 	"pricing": {

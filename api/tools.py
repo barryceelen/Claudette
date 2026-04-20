@@ -8,12 +8,13 @@ from typing import List, Set, Tuple
 
 from ..constants import PLUGIN_NAME
 
-
-# Cache of (allowed, blocked) tuples we've already warned about so a
+# Cache of (tool, allowed, blocked) tuples we've already warned about so a
 # misconfiguration is reported once per unique value. Reset implicitly at
 # process start; re-fires if the user edits settings and hits the conflict
 # again with a different list.
-_warned_domain_conflicts: Set[Tuple[Tuple[str, ...], Tuple[str, ...]]] = set()
+_warned_domain_conflicts: Set[
+    Tuple[str, Tuple[str, ...], Tuple[str, ...]]
+] = set()
 
 
 def _clean_domain_list(value) -> List[str]:
@@ -40,23 +41,24 @@ def _clean_domain_list(value) -> List[str]:
 
 
 def _warn_both_domain_lists_once(
-    allowed: List[str], blocked: List[str]
+    allowed: List[str], blocked: List[str], tool_label: str = "web_search"
 ) -> None:
     """Log a one-time warning when both domain lists are populated.
 
-    The Anthropic web-search tool rejects sending ``allowed_domains`` and
-    ``blocked_domains`` The warning surfaces the misconfiguration in the Sublime
-    console so users don't wonder why their block list has no effect.
+    The Anthropic web-search and web-fetch tools reject sending
+    ``allowed_domains`` and ``blocked_domains`` together. The warning
+    surfaces the misconfiguration in the Sublime console so users don't
+    wonder why their block list has no effect.
     """
-    key = (tuple(allowed), tuple(blocked))
+    key = (tool_label, tuple(allowed), tuple(blocked))
     if key in _warned_domain_conflicts:
         return
     _warned_domain_conflicts.add(key)
     print(
-        "{0}: both web_search_allowed_domains and web_search_blocked_domains "
-        "are set; the Anthropic API rejects both at once so "
-        "web_search_blocked_domains is being ignored. Clear one of the two "
-        "lists to silence this warning.".format(PLUGIN_NAME)
+        "{0}: both {1}_allowed_domains and {1}_blocked_domains are set; "
+        "the Anthropic API rejects both at once so {1}_blocked_domains is "
+        "being ignored. Clear one of the two lists to silence this "
+        "warning.".format(PLUGIN_NAME, tool_label)
     )
 
 
@@ -87,7 +89,7 @@ def build_web_search_tool_def(settings):
     allowed = _clean_domain_list(settings.get("web_search_allowed_domains"))
     blocked = _clean_domain_list(settings.get("web_search_blocked_domains"))
     if allowed and blocked:
-        _warn_both_domain_lists_once(allowed, blocked)
+        _warn_both_domain_lists_once(allowed, blocked, "web_search")
     if allowed:
         tool_def["allowed_domains"] = allowed
     elif blocked:
@@ -157,6 +159,57 @@ def build_text_editor_tool_def(settings, model):
     return tool_def
 
 
+def build_web_fetch_tool_def(settings):
+    """Build web fetch tool definition from settings, or None if disabled.
+
+    Uses the server-side ``web_fetch_20250910`` tool (content fetched on
+    Anthropic's infrastructure). There is no per-URL client hook; users
+    control exposure via ``web_fetch_allowed_domains`` / ``_blocked_domains``
+    and ``web_fetch_max_uses``.
+
+    Args:
+        settings: Sublime Text settings object (or dict-like).
+
+    Returns:
+        dict or None: The web fetch tool definition for the API request.
+    """
+    if not settings.get("web_fetch", False):
+        return None
+
+    try:
+        max_uses = int(settings.get("web_fetch_max_uses", 5))
+        max_uses = max(1, min(20, max_uses))
+    except (TypeError, ValueError):
+        max_uses = 5
+
+    tool_def = {
+        "type": "web_fetch_20250910",
+        "name": "web_fetch",
+        "max_uses": max_uses,
+    }
+
+    allowed = _clean_domain_list(settings.get("web_fetch_allowed_domains"))
+    blocked = _clean_domain_list(settings.get("web_fetch_blocked_domains"))
+    if allowed and blocked:
+        _warn_both_domain_lists_once(allowed, blocked, "web_fetch")
+    if allowed:
+        tool_def["allowed_domains"] = allowed
+    elif blocked:
+        tool_def["blocked_domains"] = blocked
+
+    try:
+        max_content = int(settings.get("web_fetch_max_content_tokens", 0))
+    except (TypeError, ValueError):
+        max_content = 0
+    if max_content > 0:
+        tool_def["max_content_tokens"] = max_content
+
+    if settings.get("web_fetch_citations", True):
+        tool_def["citations"] = {"enabled": True}
+
+    return tool_def
+
+
 def build_bash_tool_def(settings):
     """Build bash tool definition from settings, or None if disabled.
 
@@ -195,6 +248,65 @@ def parse_web_search_items(items):
             if url:
                 lines.append("- [{0}]({1})".format(title, url))
     return lines, has_error
+
+
+# Friendly messages for Anthropic web_fetch error codes. Unknown codes fall
+# through to the raw code so new errors still surface something useful.
+WEB_FETCH_ERROR_MESSAGES = {
+    "invalid_input": "invalid URL format",
+    "url_too_long": "URL exceeded the 250-character limit",
+    "url_not_allowed": (
+        "URL blocked by domain filtering rules or model restrictions"
+    ),
+    "url_not_accessible": "failed to fetch the URL (HTTP error)",
+    "too_many_requests": (
+        "rate limit exceeded — try again shortly"
+    ),
+    "unsupported_content_type": (
+        "content type not supported (only text and PDF)"
+    ),
+    "max_uses_exceeded": (
+        "hit the per-turn fetch limit — raise web_fetch_max_uses in settings"
+    ),
+    "unavailable": "service temporarily unavailable",
+}
+
+
+def parse_web_fetch_result(block_content):
+    """Parse a ``web_fetch_tool_result`` block's content.
+
+    Unlike ``web_search_tool_result`` (a list of result items), the web fetch
+    result content is a single dict — either ``web_fetch_result`` on success
+    or ``web_fetch_tool_error`` on failure.
+
+    Args:
+        block_content: The ``content`` field of a ``web_fetch_tool_result``
+            block.
+
+    Returns:
+        tuple: (source_line, error_code)
+          - ``source_line``: markdown bullet for the fetched URL, or
+            ``None`` on error / missing URL.
+          - ``error_code``: the error code string if the fetch failed,
+            else ``None``.
+    """
+    if not isinstance(block_content, dict):
+        return None, None
+    ctype = block_content.get("type")
+    if ctype == "web_fetch_tool_error":
+        return None, block_content.get("error_code") or "unavailable"
+    if ctype != "web_fetch_result":
+        return None, None
+    url = block_content.get("url") or ""
+    if not url:
+        return None, None
+    title = url
+    inner = block_content.get("content")
+    if isinstance(inner, dict):
+        t = inner.get("title")
+        if isinstance(t, str) and t.strip():
+            title = t.strip()
+    return "- [{0}]({1})".format(title, url), None
 
 
 def format_search_results(source_lines):
