@@ -1,6 +1,7 @@
 import json
 import os
 import select
+from collections import deque
 import socket
 import ssl
 import urllib.error
@@ -15,6 +16,7 @@ from ..constants import (
     DEFAULT_MODEL,
     DEFAULT_VERIFY_SSL,
     MAX_TOKENS,
+    PLUGIN_NAME,
     SETTINGS_FILE,
 )
 from ..statusbar.spinner import ClaudetteSpinner
@@ -41,6 +43,8 @@ from .tools import (
     build_text_editor_tool_def,
     build_web_fetch_tool_def,
     build_web_search_tool_def,
+    check_domain_list_issues,
+    format_md_link,
     format_search_results,
     get_web_search_cost_per_search,
     parse_web_fetch_result,
@@ -150,6 +154,12 @@ class ClaudetteClaudeAPI:
             message_markdown=(
                 "Let Claude look up current information using Anthropic's "
                 "hosted web search.\n\n"
+                "- Search queries are sent to Anthropic and their search "
+                "provider — anything Claude puts into a query string "
+                "leaves your machine. If `bash` or `text_editor` are "
+                "also enabled, a hostile page Claude has read could "
+                "trick it into searching for secrets it found locally. "
+                "Narrow the surface with `web_search_allowed_domains`.\n"
                 "- Each search is billed by Anthropic on top of token "
                 "costs. See their pricing page for current rates.\n"
                 "- Applies to all future chats until you change it in "
@@ -213,7 +223,18 @@ class ClaudetteClaudeAPI:
             message_markdown=(
                 "Let Claude pull full content from URLs already in the "
                 "conversation (your messages, prior web search hits, or "
-                "earlier fetches). Fetched content counts toward input tokens.\n\n"
+                "earlier fetches).\n\n"
+                "- Fetched page contents enter the conversation verbatim. "
+                "A hostile page can contain instructions that try to "
+                "steer Claude (prompt injection). With `bash` or "
+                "`text_editor` enabled, such a page could trick Claude "
+                "into reading local files and leaking them back out "
+                "through a follow-up fetch or search. Prefer setting "
+                "`web_fetch_allowed_domains` to a short list of sites "
+                "you trust.\n"
+                "- Fetched content counts toward input tokens.\n"
+                "- Applies to all future chats until you change it in "
+                "`Claudette.sublime-settings`."
             ),
             question="",
             options=[
@@ -439,6 +460,11 @@ class ClaudetteClaudeAPI:
         cache_write_tokens = 0
         web_search_requests = 0
         web_fetch_requests = 0
+        # FIFO queue of URLs from completed ``server_tool_use`` blocks for
+        # ``web_fetch`` — paired in order with each ``web_fetch_tool_result``
+        # so multiple fetches per turn stay aligned. Error payloads omit the
+        # URL; we pop the matching entry for audit messages.
+        pending_web_fetch_urls = deque()
 
         ssl_context = self._get_ssl_context()
         with urllib.request.urlopen(
@@ -556,21 +582,38 @@ class ClaudetteClaudeAPI:
                                 0,
                             )
                     elif btype == "web_fetch_tool_result":
-                        source_line, error_code = parse_web_fetch_result(
-                            block.get("content")
+                        (
+                            source_line,
+                            error_code,
+                            result_url,
+                        ) = parse_web_fetch_result(block.get("content"))
+                        # Prefer the server-echoed URL on success; otherwise
+                        # take the next URL from the FIFO (error payloads omit
+                        # the URL; a scheme-rejected ``source_line`` still has
+                        # an attempted URL worth auditing).
+                        paired = (
+                            pending_web_fetch_urls.popleft()
+                            if pending_web_fetch_urls
+                            else None
                         )
+                        fetch_url = result_url or paired
                         if error_code:
                             self._report_web_fetch_error(
-                                error_code, error_view
+                                error_code, error_view, url=fetch_url
                             )
-                        elif source_line:
-                            sources_lines.append(source_line)
-                            sublime.set_timeout(
-                                lambda: sublime.status_message(
-                                    "Web fetch complete"
-                                ),
-                                0,
-                            )
+                        else:
+                            if source_line:
+                                sources_lines.append(source_line)
+                            if fetch_url:
+                                self._log_web_fetch_success(
+                                    fetch_url, error_view
+                                )
+                                sublime.set_timeout(
+                                    lambda: sublime.status_message(
+                                        "Web fetch complete"
+                                    ),
+                                    0,
+                                )
 
                 elif event_type == "content_block_delta":
                     idx = event.get("index")
@@ -610,10 +653,9 @@ class ClaudetteClaudeAPI:
                             title = (
                                 cit.get("title") or url or "Source"
                             )
-                            if url:
-                                link_md = " [{0}]({1}) ".format(
-                                    title, url
-                                )
+                            link = format_md_link(title, url)
+                            if link:
+                                link_md = " " + link + " "
                                 sublime.set_timeout(
                                     lambda md=link_md: chunk_callback(
                                         md, is_done=False
@@ -643,6 +685,20 @@ class ClaudetteClaudeAPI:
                                 block_state["input"] = {
                                     "_malformed_json": raw_json
                                 }
+                        if (
+                            btype == "server_tool_use"
+                            and block_state.get("name") == "web_fetch"
+                        ):
+                            inp = block_state.get("input") or {}
+                            if isinstance(inp, dict):
+                                candidate = inp.get("url")
+                                if (
+                                    isinstance(candidate, str)
+                                    and candidate.strip()
+                                ):
+                                    pending_web_fetch_urls.append(
+                                        candidate.strip()
+                                    )
 
                 elif event_type == "message_delta":
                     delta = event.get("delta", {}) or {}
@@ -740,20 +796,68 @@ class ClaudetteClaudeAPI:
 
         sublime.set_timeout(show, 0)
 
-    def _report_web_fetch_error(self, error_code, error_view):
-        """Surface a web-fetch error as a chat-status message."""
+    def _report_web_fetch_error(self, error_code, error_view, url=None):
+        """Surface a web-fetch error as a chat-status message.
+
+        ``url`` is the URL the model asked to fetch, captured from the
+        preceding ``server_tool_use`` block — the error payload itself
+        omits it. Including it gives users an audit trail: they can see
+        which page was attempted even when the fetch failed.
+        """
         friendly = WEB_FETCH_ERROR_MESSAGES.get(error_code)
         if friendly:
-            err_msg = "Web fetch error: {0} ({1})".format(
-                friendly, error_code
-            )
+            detail = "{0} ({1})".format(friendly, error_code)
         else:
-            err_msg = "Web fetch error: {0}".format(error_code)
+            detail = error_code
+        if url:
+            err_msg = "Web fetch failed: {0} — {1}".format(url, detail)
+        else:
+            err_msg = "Web fetch failed: {0}".format(detail)
 
         def show(msg=err_msg, v=error_view):
             if v is not None and v.window() is not None:
                 claudette_chat_status_message(v.window(), msg, "⚠️")
             sublime.status_message(msg)
+
+        sublime.set_timeout(show, 0)
+
+    def _log_web_fetch_success(self, url, error_view):
+        """Write a persistent chat line naming a URL we just fetched.
+
+        Runs alongside the end-of-turn ``## Sources`` block so the
+        audit trail survives even when a turn is cancelled or errors
+        out before the sources block is emitted.
+        """
+        if not url:
+            return
+        msg = "Fetched: {0}".format(url)
+
+        def show(m=msg, v=error_view):
+            if v is not None and v.window() is not None:
+                claudette_chat_status_message(v.window(), m, "🌍")
+
+        sublime.set_timeout(show, 0)
+
+    def _surface_domain_list_issues(self, tool_label, view):
+        """Emit chat-status warnings for misconfigured domain lists.
+
+        Thin wrapper around ``check_domain_list_issues`` that routes
+        each deduped message to the current chat view (preferred) or
+        the Sublime console (fallback). Safe to call every request —
+        the dedupe lives inside the checker, so repeats are silent.
+        """
+        messages = check_domain_list_issues(self.settings, tool_label)
+        if not messages:
+            return
+        window = view.window() if view is not None else None
+
+        def show(msgs=messages, w=window):
+            if w is not None:
+                for m in msgs:
+                    claudette_chat_status_message(w, m, "⚠️")
+            else:
+                for m in msgs:
+                    print("{0}: {1}".format(PLUGIN_NAME, m))
 
         sublime.set_timeout(show, 0)
 
@@ -815,22 +919,27 @@ class ClaudetteClaudeAPI:
             )
             return
 
+        # chat_view may be sublime View or ClaudetteChatView (.view,
+        # .set_tool_status, .clear_tool_status). Resolve it early so
+        # the domain-list warning helper has a real view to target.
+        view_for_api = getattr(chat_view, "view", chat_view)
+        chat_view_for_status = (
+            chat_view if hasattr(chat_view, "set_tool_status") else None
+        )
+
         self._maybe_offer_web_search_enable(chat_view)
+        if self.settings.get("web_search", False):
+            self._surface_domain_list_issues("web_search", view_for_api)
         web_search_tool = build_web_search_tool_def(self.settings)
         if web_search_tool:
             tools_list.append(web_search_tool)
 
         self._maybe_offer_web_fetch_enable(chat_view)
+        if self.settings.get("web_fetch", False):
+            self._surface_domain_list_issues("web_fetch", view_for_api)
         web_fetch_tool = build_web_fetch_tool_def(self.settings)
         if web_fetch_tool:
             tools_list.append(web_fetch_tool)
-
-        # chat_view may be sublime View or ClaudetteChatView (.view,
-        # .set_tool_status, .clear_tool_status).
-        view_for_api = getattr(chat_view, "view", chat_view)
-        chat_view_for_status = (
-            chat_view if hasattr(chat_view, "set_tool_status") else None
-        )
 
         system_messages = self._build_system_messages(view_for_api)
         window = view_for_api.window() if view_for_api else None
@@ -1363,8 +1472,12 @@ class ClaudetteClaudeAPI:
             system_messages = self._build_system_messages(chat_view)
 
             self._maybe_offer_web_search_enable(chat_view)
+            if self.settings.get("web_search", False):
+                self._surface_domain_list_issues("web_search", chat_view)
             web_search_tool = build_web_search_tool_def(self.settings)
             self._maybe_offer_web_fetch_enable(chat_view)
+            if self.settings.get("web_fetch", False):
+                self._surface_domain_list_issues("web_fetch", chat_view)
             web_fetch_tool = build_web_fetch_tool_def(self.settings)
             tools_list = [
                 t for t in (web_search_tool, web_fetch_tool) if t

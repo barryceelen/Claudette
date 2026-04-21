@@ -168,9 +168,11 @@
 	// Optional: never fetch from these domains.
 	// Do not set both web_fetch_allowed_domains and web_fetch_blocked_domains.
 	"web_fetch_blocked_domains": [],
-	// Optional: cap fetched content length (approximate tokens). Use this to
-	// avoid blowing the context window on large pages/PDFs. 0 = no cap.
-	"web_fetch_max_content_tokens": 0,
+	// Cap fetched content length (approximate tokens). Keeps hostile or
+	// oversized pages/PDFs from blowing the context window (and limits the
+	// prompt-injection surface of any one fetch). Default 100000 is roughly
+	// half of a 200k-token context. Set to 0 to disable the cap.
+	"web_fetch_max_content_tokens": 100000,
 	// When true, Claude can inline citations to fetched documents in its reply.
 	"web_fetch_citations": true,
 	// Claude pricing per 1M tokens (as of April 2026)
