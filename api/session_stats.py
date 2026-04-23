@@ -63,6 +63,33 @@ def calculate_cost(
     return input_cost + output_cost + cache_write_cost + cache_read_cost
 
 
+def format_cost(cost):
+    """Format a dollar cost with conditional precision.
+
+    Uses two decimal places for costs of $0.01 or more, and four decimal
+    places for smaller non-zero costs so sub-cent amounts don't render as
+    ``$0.00``. Zero and negative values always render as ``$0.00``.
+
+    Args:
+        cost: The cost in dollars.
+
+    Returns:
+        str: A formatted cost string prefixed with ``$``.
+    """
+    try:
+        value = float(cost)
+    except (TypeError, ValueError):
+        return "$0.00"
+
+    if value <= 0:
+        return "$0.00"
+
+    if value < 0.01:
+        return "${0:.4f}".format(value)
+
+    return "${0:.2f}".format(value)
+
+
 def update_session_stats(
     view,
     input_tokens,
@@ -157,8 +184,8 @@ def format_status_message(
         status += " Web fetches: {0}.".format(web_fetch_requests)
 
     if session_cost > 0:
-        status += " Cost: ${0:.2f} (${1:.2f} session)".format(
-            current_cost, session_cost
+        status += " Cost: {0} ({1} session)".format(
+            format_cost(current_cost), format_cost(session_cost)
         )
 
     return status

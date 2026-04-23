@@ -6,6 +6,7 @@ import sublime_plugin
 
 from ..api.api import ClaudetteClaudeAPI
 from ..api.handler import ClaudetteStreamingResponseHandler
+from ..api.session_stats import format_cost
 from ..constants import PLUGIN_NAME, SETTINGS_FILE, TOOL_STATUS_MESSAGES
 from ..utils import (
     claudette_chat_status_message,
@@ -266,13 +267,13 @@ class ClaudetteAskQuestionCommand(sublime_plugin.WindowCommand):
                         ).format(web_search_requests, session_web_search)
                     cost_msg = (
                         "Tokens: {0:,} in, {1:,} out.{2} "
-                        "Cost: ${3:.2f} / ${4:.2f}\n"
+                        "Cost: {3} / {4}\n"
                     ).format(
                         input_tokens,
                         output_tokens,
                         web_search_part,
-                        cost,
-                        session_cost,
+                        format_cost(cost),
+                        format_cost(session_cost),
                     )
                     claudette_chat_status_message(
                         self.get_window(), cost_msg, "⚡️"
