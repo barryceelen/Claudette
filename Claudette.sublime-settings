@@ -113,8 +113,7 @@
 	// initial working directory. Else, all directories that are open in the sidebar are allowed.
 	"bash_tool_restrict_to_initial_root_only": true,
 	// When true, Claude can view and edit files (view, str_replace, create, insert)
-	// in your project. Uses non-streaming requests until the turn ends.
-	// Paths are resolved against project folders or allowed_tool_roots.
+	// in your project. Paths are resolved against project folders or allowed_tool_roots.
 	// Same roots are used for the bash tool when enabled.
 	// https://platform.claude.com/docs/en/agents-and-tools/tool-use/text-editor-tool
 	"text_editor_tool": false,
