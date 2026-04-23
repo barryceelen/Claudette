@@ -60,20 +60,23 @@
 	// Maximum tool-use loop iterations per request before aborting (prevents runaway execution).
 	"max_tool_iterations": 50,
 	// When true, Claude can run shell commands in a persistent bash session on your machine.
-	// Uses non-streaming requests until the turn ends. Arbitrary code execution: enable only if you trust the model and your environment.
-	// The ban list and cd sandbox are best-effort speed bumps — not hard containment.
-	// The confirmation dialog (bash_tool_confirm) is the primary safety boundary.
+	//
 	// https://platform.claude.com/docs/en/agents-and-tools/tool-use/bash-tool
+	//
+	// SECURITY WARNING: This tool runs commands on your machine with your
+	// permissions — it can read, modify, or exfiltrate any file you can touch.
+	// Enabling this together with "web_search" or "web_fetch" is especially
+	// risky: a hostile page brought into the conversation can contain prompt-
+	// injection instructions that steer Claude into reading local secrets and
+	// leaking them back out through a follow-up search query or URL fetch.
+	// Keep bash_tool_confirm on and review every command before approving, and
+	// avoid adding broad entries to bash_tool_allow_prefix / _allow_exact.
 	"bash_tool": false,
 	// Max seconds for each bash tool command before it is killed and the session restarted.
 	"bash_tool_timeout": 120,
 	// Truncate combined stdout/stderr beyond this many bytes (UTF-8) with a notice.
 	"bash_tool_max_output_bytes": 100000,
-	// When true, show an inline confirmation in the chat view before each bash command
-	// (restart is never prompted). Navigation: ↑/↓ to move, Enter to confirm, Esc to deny,
-	// number keys (1–9) jump to and select an option. Picking "Yes, and don't ask again for…"
-	// appends to bash_tool_allow_prefix (or bash_tool_allow_exact when no prefix can be
-	// extracted). Picking "No" also aborts any sibling tool calls in the same assistant message.
+	// When true, show an inline confirmation in the chat view before each bash command.
 	"bash_tool_confirm": true,
 	// Model used to extract a safe "allow prefix" from the bash command when the user picks
 	// "Yes, and don't ask again for…". Should be a small/fast Haiku-class model; the extractor
@@ -97,9 +100,11 @@
 	// Extra command names (lowercase basenames) disabled in addition to the built-in hygiene
 	// set (network clients, browsers). Example: ["docker"] to reject the docker binary by first
 	// token. The check is applied after stripping leading env assignments (FOO=bar) and env/exec
-	// wrappers, so "env docker ps" and "exec docker ps" are caught too. It is NOT a sandbox:
-	// a command the model wraps via "python -c", "node -e", a script file, etc. can still run
-	// anything. The confirmation dialog (bash_tool_confirm) is the real safety boundary.
+	// wrappers, so "env docker ps" and "exec docker ps" are caught too.
+	//
+	// It is NOT a sandbox: a command the model wraps via "python -c", "node -e", a script file
+	// etc. can still run anything. The confirmation dialog (bash_tool_confirm) is the real
+	// safety boundary.
 	// Also blocked by the default bash policy (not configurable here): command substitution
 	// ($(...), backticks), /dev/tcp and /dev/udp network paths, and "<shell> -c" re-entry
 	// (bash -c, sh -c, etc.) because their inner commands are not visible to the checker.
@@ -127,11 +132,19 @@
 	// folders + allowed_tool_roots). Set to false to disable entirely.
 	"claude_md": true,
 	// When true, Claude can search the web for up-to-date information. Only works
-	// with supported models (e.g. Claude Opus 4.6, 4.5, Sonnet 4.5, Haiku 4.5).
-	// Each search is billed by Anthropic in addition to token costs — see their
-	// pricing page for current rates.
+	// with supported models. Note that each search is billed by Anthropic in
+	// addition to token costs — see their pricing page for current rates.
+	//
 	// https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool
-	// "web_search": false,
+	//
+	// SECURITY WARNING: Search queries are sent to Anthropic and its search
+	// provider — anything Claude puts into a query string leaves your machine.
+	// Enabling this together with "bash_tool" or "text_editor_tool" is
+	// especially risky: a hostile page Claude has read could trick it (via
+	// prompt injection) into searching for secrets it found locally, leaking
+	// them through the query itself. Narrow the surface with
+	// web_search_allowed_domains whenever possible.
+	"web_search": false,
 	// Max searches per turn. Clamped to the range 1..20 by Claudette.
 	"web_search_max_uses": 5,
 	// Cost per web search in dollars (as of April 2026).
@@ -152,14 +165,18 @@
 	// },
 	// When true, Claude can fetch the contents of URLs that already appear in
 	// the conversation (user messages, prior web-search results, etc.). Fetches
-	// run on Anthropic's infrastructure, not on your machine — we cannot prompt
-	// per URL, so the first time a request would use the tool you'll get a
-	// one-time confirmation in the chat. After that it stays on until you set
-	// web_fetch to false here. For security, prefer narrowing with
-	// web_fetch_allowed_domains. There is no additional charge beyond the tokens
-	// the fetched content consumes.
+	// run on Anthropic's infrastructure, not on your machine.
+	//
 	// https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-fetch-tool
-	// "web_fetch": false,
+	//
+	// SECURITY WARNING: Fetched page contents enter the conversation verbatim,
+	// so a hostile page can contain instructions that try to steer Claude
+	// (prompt injection). Enabling this together with "bash_tool" or
+	// "text_editor_tool" is especially risky: such a page could trick Claude
+	// into reading local files and leaking them back out through a follow-up
+	// fetch or search. web_fetch_allowed_domains or web_fetch_blocked_domains
+	// allow you to limit the content that Claude is allowed to fetch.
+	"web_fetch": false,
 	// Max fetches per turn. Clamped to the range 1..20 by Claudette.
 	"web_fetch_max_uses": 5,
 	// Optional: only fetch from these domains (e.g. ["example.com", "docs.example.com"]).

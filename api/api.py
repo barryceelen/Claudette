@@ -111,149 +111,6 @@ class ClaudetteClaudeAPI:
         except (TypeError, ValueError):
             return 1.0
 
-    def _maybe_offer_web_search_enable(self, chat_view) -> bool:
-        """One-time prompt to turn on ``web_search`` globally when unset.
-
-        The prompt fires only when the user has *never* expressed an
-        opinion on ``web_search``. Detection relies on the default
-        ``Claudette.sublime-settings`` *not* defining the key — so
-        ``self.settings.has("web_search")`` is True iff the user wrote
-        a value into their overlay (via the prompt below or by hand).
-        Picking Yes / No writes the key; cancelling (view close,
-        timeout) writes nothing so the offer re-arms next request.
-
-        Returns True iff the user just accepted — in which case the
-        setting has been flipped on and every subsequent request will
-        include the hosted web_search tool without further confirmation
-        (to revoke, set ``"web_search": false`` in user settings).
-        """
-        # Respect any explicit user choice, true or false.
-        if self.settings.has("web_search"):
-            return False
-
-        view = getattr(chat_view, "view", chat_view)
-        if view is None:
-            return False
-        window = view.window()
-        if window is None:
-            return False
-
-        from ..chat.chat_view import ClaudetteChatView
-        from ..chat.confirmation import (
-            ConfirmationOption,
-            ConfirmationRequest,
-        )
-
-        mgr = ClaudetteChatView._instances.get(window.id())
-        if mgr is None or mgr.confirmation is None:
-            return False
-
-        request = ConfirmationRequest(
-            title="Enable Web Search?",
-            icon="🌍",
-            message_markdown=(
-                "Let Claude look up current information using Anthropic's "
-                "hosted web search.\n\n"
-                "- Search queries are sent to Anthropic and their search "
-                "provider — anything Claude puts into a query string "
-                "leaves your machine. If `bash` or `text_editor` are "
-                "also enabled, a hostile page Claude has read could "
-                "trick it into searching for secrets it found locally. "
-                "Narrow the surface with `web_search_allowed_domains`.\n"
-                "- Each search is billed by Anthropic on top of token "
-                "costs. See their pricing page for current rates.\n"
-                "- Applies to all future chats until you change it in "
-                "`Claudette.sublime-settings`."
-            ),
-            question="",
-            options=[
-                ConfirmationOption(id="yes", label="Yes, enable web search"),
-                ConfirmationOption(id="no", label="No"),
-            ],
-            cancel_index=1,
-        )
-        result = mgr.request_confirmation(
-            request, view_id=view.id(), spinner=self.spinner
-        )
-
-        # Only persist a choice when the user actually picked an option.
-        # ``RESULT_CANCELLED`` means the view was closed or the prompt
-        # timed out before they answered — leave the setting absent so
-        # the offer re-arms on the next request. Esc routes to
-        # ``cancel_index`` (= explicit "No") and comes back as ``"no"``.
-        if result not in ("yes", "no"):
-            return False
-
-        self.settings.set("web_search", result == "yes")
-        sublime.save_settings(SETTINGS_FILE)
-        return result == "yes"
-
-    def _maybe_offer_web_fetch_enable(self, chat_view) -> bool:
-        """One-time prompt to turn on ``web_fetch`` globally when unset.
-
-        The Anthropic web_fetch tool runs server-side, so we cannot prompt per
-        URL.
-
-        Returns True if the user just accepted.
-        """
-        if self.settings.has("web_fetch"):
-            return False
-
-        view = getattr(chat_view, "view", chat_view)
-        if view is None:
-            return False
-        window = view.window()
-        if window is None:
-            return False
-
-        from ..chat.chat_view import ClaudetteChatView
-        from ..chat.confirmation import (
-            ConfirmationOption,
-            ConfirmationRequest,
-        )
-
-        mgr = ClaudetteChatView._instances.get(window.id())
-
-        if mgr is None or mgr.confirmation is None:
-            return False
-
-        request = ConfirmationRequest(
-            title="Enable Web Fetch?",
-            icon="🌍",
-            message_markdown=(
-                "Let Claude pull full content from URLs already in the "
-                "conversation (your messages, prior web search hits, or "
-                "earlier fetches).\n\n"
-                "- Fetched page contents enter the conversation verbatim. "
-                "A hostile page can contain instructions that try to "
-                "steer Claude (prompt injection). With `bash` or "
-                "`text_editor` enabled, such a page could trick Claude "
-                "into reading local files and leaking them back out "
-                "through a follow-up fetch or search. Prefer setting "
-                "`web_fetch_allowed_domains` to a short list of sites "
-                "you trust.\n"
-                "- Fetched content counts toward input tokens.\n"
-                "- Applies to all future chats until you change it in "
-                "`Claudette.sublime-settings`."
-            ),
-            question="",
-            options=[
-                ConfirmationOption(id="yes", label="Yes, enable web fetch"),
-                ConfirmationOption(id="no", label="No"),
-            ],
-            cancel_index=1,
-        )
-        result = mgr.request_confirmation(
-            request, view_id=view.id(), spinner=self.spinner
-        )
-
-        if result not in ("yes", "no"):
-            return False
-
-        self.settings.set("web_fetch", result == "yes")
-        sublime.save_settings(SETTINGS_FILE)
-        return result == "yes"
-
     @staticmethod
     def _message_has_content(msg):
         """Return True if message has content (str or list for tool turns)."""
@@ -927,14 +784,12 @@ class ClaudetteClaudeAPI:
             chat_view if hasattr(chat_view, "set_tool_status") else None
         )
 
-        self._maybe_offer_web_search_enable(chat_view)
         if self.settings.get("web_search", False):
             self._surface_domain_list_issues("web_search", view_for_api)
         web_search_tool = build_web_search_tool_def(self.settings)
         if web_search_tool:
             tools_list.append(web_search_tool)
 
-        self._maybe_offer_web_fetch_enable(chat_view)
         if self.settings.get("web_fetch", False):
             self._surface_domain_list_issues("web_fetch", view_for_api)
         web_fetch_tool = build_web_fetch_tool_def(self.settings)
@@ -1471,11 +1326,9 @@ class ClaudetteClaudeAPI:
             ]
             system_messages = self._build_system_messages(chat_view)
 
-            self._maybe_offer_web_search_enable(chat_view)
             if self.settings.get("web_search", False):
                 self._surface_domain_list_issues("web_search", chat_view)
             web_search_tool = build_web_search_tool_def(self.settings)
-            self._maybe_offer_web_fetch_enable(chat_view)
             if self.settings.get("web_fetch", False):
                 self._surface_domain_list_issues("web_fetch", chat_view)
             web_fetch_tool = build_web_fetch_tool_def(self.settings)
