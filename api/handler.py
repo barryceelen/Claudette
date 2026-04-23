@@ -4,9 +4,13 @@ from ..utils import claudette_chat_status_message
 
 
 class ClaudetteStreamingResponseHandler:
-    def __init__(self, view, on_complete=None):
+    def __init__(self, view, on_complete=None, chat_view=None):
         self.view = view
         self.on_complete = on_complete
+        # ClaudetteChatView, used to clear the pre-stream in-chat tool status
+        # once the first body text is written (must run on the UI thread).
+        self._chat_view = chat_view
+        self._stream_tool_status_cleared = False
         self.line_buffer = ""
         self.at_line_start = True
         self._last_output_char = None
@@ -14,9 +18,20 @@ class ClaudetteStreamingResponseHandler:
         self._completed = False
         self._usage_info = None
 
+    def _clear_in_chat_tool_status_on_first_write(self):
+        if self._stream_tool_status_cleared:
+            return
+        self._stream_tool_status_cleared = True
+        if self._chat_view is not None and hasattr(
+            self._chat_view, "clear_tool_status"
+        ):
+            cv = self._chat_view
+            sublime.set_timeout(lambda: cv.clear_tool_status(), 0)
+
     def _output_text(self, text):
         """Output text to the view."""
         if text:
+            self._clear_in_chat_tool_status_on_first_write()
             self.view.set_read_only(False)
             self.view.run_command(
                 "append",

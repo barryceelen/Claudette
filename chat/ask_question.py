@@ -284,6 +284,7 @@ class ClaudetteAskQuestionCommand(sublime_plugin.WindowCommand):
             handler = ClaudetteStreamingResponseHandler(
                 view=self.chat_view.view,
                 on_complete=on_complete,
+                chat_view=self.chat_view,
             )
             if use_agent_tool_loop:
                 target = api.run_with_text_editor_loop
