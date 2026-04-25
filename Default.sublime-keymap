@@ -7,6 +7,11 @@
 				"key": "setting.claudette_is_chat_view",
 				"operator": "equal",
 				"operand": true
+			},
+			{
+				"key": "setting.claudette_awaiting_confirmation",
+				"operator": "not_equal",
+				"operand": true
 			}
 		]
 	},
@@ -16,6 +21,260 @@
 		"context": [
 			{
 				"key": "setting.claudette_is_chat_view",
+				"operator": "equal",
+				"operand": true
+			},
+			{
+				"key": "setting.claudette_awaiting_confirmation",
+				"operator": "not_equal",
+				"operand": true
+			}
+		]
+	},
+	{
+		"keys": ["down"],
+		"command": "claudette_confirmation_next",
+		"context": [
+			{
+				"key": "setting.claudette_is_chat_view",
+				"operator": "equal",
+				"operand": true
+			},
+			{
+				"key": "setting.claudette_awaiting_confirmation",
+				"operator": "equal",
+				"operand": true
+			}
+		]
+	},
+	{
+		"keys": ["up"],
+		"command": "claudette_confirmation_prev",
+		"context": [
+			{
+				"key": "setting.claudette_is_chat_view",
+				"operator": "equal",
+				"operand": true
+			},
+			{
+				"key": "setting.claudette_awaiting_confirmation",
+				"operator": "equal",
+				"operand": true
+			}
+		]
+	},
+	{
+		"keys": ["tab"],
+		"command": "claudette_confirmation_next",
+		"context": [
+			{
+				"key": "setting.claudette_is_chat_view",
+				"operator": "equal",
+				"operand": true
+			},
+			{
+				"key": "setting.claudette_awaiting_confirmation",
+				"operator": "equal",
+				"operand": true
+			}
+		]
+	},
+	{
+		"keys": ["shift+tab"],
+		"command": "claudette_confirmation_prev",
+		"context": [
+			{
+				"key": "setting.claudette_is_chat_view",
+				"operator": "equal",
+				"operand": true
+			},
+			{
+				"key": "setting.claudette_awaiting_confirmation",
+				"operator": "equal",
+				"operand": true
+			}
+		]
+	},
+	{
+		"keys": ["enter"],
+		"command": "claudette_confirmation_confirm",
+		"context": [
+			{
+				"key": "setting.claudette_is_chat_view",
+				"operator": "equal",
+				"operand": true
+			},
+			{
+				"key": "setting.claudette_awaiting_confirmation",
+				"operator": "equal",
+				"operand": true
+			}
+		]
+	},
+	{
+		"keys": ["escape"],
+		"command": "claudette_confirmation_cancel",
+		"context": [
+			{
+				"key": "setting.claudette_is_chat_view",
+				"operator": "equal",
+				"operand": true
+			},
+			{
+				"key": "setting.claudette_awaiting_confirmation",
+				"operator": "equal",
+				"operand": true
+			}
+		]
+	},
+	{
+		"keys": ["1"],
+		"command": "claudette_confirmation_select_number",
+		"args": {"number": 1},
+		"context": [
+			{
+				"key": "setting.claudette_is_chat_view",
+				"operator": "equal",
+				"operand": true
+			},
+			{
+				"key": "setting.claudette_awaiting_confirmation",
+				"operator": "equal",
+				"operand": true
+			}
+		]
+	},
+	{
+		"keys": ["2"],
+		"command": "claudette_confirmation_select_number",
+		"args": {"number": 2},
+		"context": [
+			{
+				"key": "setting.claudette_is_chat_view",
+				"operator": "equal",
+				"operand": true
+			},
+			{
+				"key": "setting.claudette_awaiting_confirmation",
+				"operator": "equal",
+				"operand": true
+			}
+		]
+	},
+	{
+		"keys": ["3"],
+		"command": "claudette_confirmation_select_number",
+		"args": {"number": 3},
+		"context": [
+			{
+				"key": "setting.claudette_is_chat_view",
+				"operator": "equal",
+				"operand": true
+			},
+			{
+				"key": "setting.claudette_awaiting_confirmation",
+				"operator": "equal",
+				"operand": true
+			}
+		]
+	},
+	{
+		"keys": ["4"],
+		"command": "claudette_confirmation_select_number",
+		"args": {"number": 4},
+		"context": [
+			{
+				"key": "setting.claudette_is_chat_view",
+				"operator": "equal",
+				"operand": true
+			},
+			{
+				"key": "setting.claudette_awaiting_confirmation",
+				"operator": "equal",
+				"operand": true
+			}
+		]
+	},
+	{
+		"keys": ["5"],
+		"command": "claudette_confirmation_select_number",
+		"args": {"number": 5},
+		"context": [
+			{
+				"key": "setting.claudette_is_chat_view",
+				"operator": "equal",
+				"operand": true
+			},
+			{
+				"key": "setting.claudette_awaiting_confirmation",
+				"operator": "equal",
+				"operand": true
+			}
+		]
+	},
+	{
+		"keys": ["6"],
+		"command": "claudette_confirmation_select_number",
+		"args": {"number": 6},
+		"context": [
+			{
+				"key": "setting.claudette_is_chat_view",
+				"operator": "equal",
+				"operand": true
+			},
+			{
+				"key": "setting.claudette_awaiting_confirmation",
+				"operator": "equal",
+				"operand": true
+			}
+		]
+	},
+	{
+		"keys": ["7"],
+		"command": "claudette_confirmation_select_number",
+		"args": {"number": 7},
+		"context": [
+			{
+				"key": "setting.claudette_is_chat_view",
+				"operator": "equal",
+				"operand": true
+			},
+			{
+				"key": "setting.claudette_awaiting_confirmation",
+				"operator": "equal",
+				"operand": true
+			}
+		]
+	},
+	{
+		"keys": ["8"],
+		"command": "claudette_confirmation_select_number",
+		"args": {"number": 8},
+		"context": [
+			{
+				"key": "setting.claudette_is_chat_view",
+				"operator": "equal",
+				"operand": true
+			},
+			{
+				"key": "setting.claudette_awaiting_confirmation",
+				"operator": "equal",
+				"operand": true
+			}
+		]
+	},
+	{
+		"keys": ["9"],
+		"command": "claudette_confirmation_select_number",
+		"args": {"number": 9},
+		"context": [
+			{
+				"key": "setting.claudette_is_chat_view",
+				"operator": "equal",
+				"operand": true
+			},
+			{
+				"key": "setting.claudette_awaiting_confirmation",
 				"operator": "equal",
 				"operand": true
 			}

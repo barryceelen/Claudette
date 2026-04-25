@@ -57,26 +57,102 @@
 	// Index of the currently active system message in the system_messages setting.
 	"default_system_message_index": 0,
 	"temperature": "1.0",
-	// When true, Claude can search the web for up-to-date information. Only works
-	// with supported models (e.g. Claude Opus 4.6, 4.5, Sonnet 4.5, Haiku 4.5).
-	// Web search is billed at $10 per 1,000 searches in addition to token costs.
-	// https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool
-	"web_search": false,
+	// Maximum tool-use loop iterations per request before aborting (prevents runaway execution).
+	"max_tool_iterations": 50,
+	// When true, Claude can run shell commands in a persistent bash session on your machine.
+	//
+	// https://platform.claude.com/docs/en/agents-and-tools/tool-use/bash-tool
+	//
+	// SECURITY WARNING: This tool runs commands on your machine with your
+	// permissions — it can read, modify, or exfiltrate any file you can touch.
+	// Enabling this together with "web_search" or "web_fetch" is especially
+	// risky: a hostile page brought into the conversation can contain prompt-
+	// injection instructions that steer Claude into reading local secrets and
+	// leaking them back out through a follow-up search query or URL fetch.
+	// Keep bash_tool_confirm on and review every command before approving, and
+	// avoid adding broad entries to bash_tool_allow_prefix / _allow_exact.
+	"bash_tool": false,
+	// Max seconds for each bash tool command before it is killed and the session restarted.
+	"bash_tool_timeout": 120,
+	// Truncate combined stdout/stderr beyond this many bytes (UTF-8) with a notice.
+	"bash_tool_max_output_bytes": 100000,
+	// When true, show an inline confirmation in the chat view before each bash command.
+	"bash_tool_confirm": true,
+	// Model used to extract a safe "allow prefix" from the bash command when the user picks
+	// "Yes, and don't ask again for…". Should be a small/fast Haiku-class model; the extractor
+	// is invoked once per unique command string (memoized per session) and falls back to an
+	// exact-match allow-rule when no prefix can be determined.
+	"bash_prefix_extractor_model": "claude-haiku-4-5",
+	// When bash_tool_confirm is true, these read-only commands skip the inline confirmation:
+	// git status, git diff, git log, git branch, pwd, tree, date, which.
+	"bash_tool_allow_safe_commands": true,
+	// When true, append each bash command to the chat as markdown (default false: avoids duplicate
+	// blocks when the model emits multiple identical tool_use calls in one response).
+	"bash_tool_echo_in_chat": false,
+	// Optional: commands that skip the inline confirmation when bash_tool_confirm is true
+	// (exact match after normalizing whitespace). Unsafe patterns (| $() ``) still require
+	// confirmation. Populated automatically when you pick "Yes, and don't ask again for `<command>`".
+	"bash_tool_allow_exact": [],
+	// Optional: command string prefixes that skip the inline confirmation when bash_tool_confirm
+	// is true. Example: ["git status", "npm test"]. Unsafe patterns still require confirmation.
+	// Populated automatically when you pick "Yes, and don't ask again for `<prefix>` commands".
+	"bash_tool_allow_prefix": [],
+	// Extra command names (lowercase basenames) disabled in addition to the built-in hygiene
+	// set (network clients, browsers). Example: ["docker"] to reject the docker binary by first
+	// token. The check is applied after stripping leading env assignments (FOO=bar) and env/exec
+	// wrappers, so "env docker ps" and "exec docker ps" are caught too.
+	//
+	// It is NOT a sandbox: a command the model wraps via "python -c", "node -e", a script file
+	// etc. can still run anything. The confirmation dialog (bash_tool_confirm) is the real
+	// safety boundary.
+	// Also blocked by the default bash policy (not configurable here): command substitution
+	// ($(...), backticks), /dev/tcp and /dev/udp network paths, and "<shell> -c" re-entry
+	// (bash -c, sh -c, etc.) because their inner commands are not visible to the checker.
+	"bash_tool_banned_commands_extra": [],
+	// When true (default), cd and cwd reset only allow directories under the session's
+	// initial working directory. Else, all directories that are open in the sidebar are allowed.
+	"bash_tool_restrict_to_initial_root_only": true,
 	// When true, Claude can view and edit files (view, str_replace, create, insert)
-	// in your project. Uses non-streaming requests until the turn ends.
-	// Paths are resolved against project folders or text_editor_tool_roots.
+	// in your project. Paths are resolved against project folders or allowed_tool_roots.
+	// Same roots are used for the bash tool when enabled.
 	// https://platform.claude.com/docs/en/agents-and-tools/tool-use/text-editor-tool
 	"text_editor_tool": false,
 	// Optional: max characters when viewing a file (Claude 4 tool only). 0 = no limit.
 	// "text_editor_tool_max_characters": 10000,
-	// Optional: extra allowed roots for file operations (paths must be under these or project folders).
-	"text_editor_tool_roots": [],
-	// Maximum number of web searches per request when web_search is enabled (1–20).
+	// Optional: extra allowed directory roots for agent tools (text editor and bash; absolute paths).
+	// By default access to folders or files that are open in the sidebar is allowed.
+	"allowed_tool_roots": [],
+	// CLAUDE.md (project memory): when true and a CLAUDE.md file exists at a
+	// project root or any ancestor directory, its contents are prepended to
+	// every request as cached system context. Any nested CLAUDE.md files found
+	// under a project root are surfaced as a bullet list so Claude knows to
+	// read them with the text_editor tool when it works in those subdirectories.
+	// Discovery uses the same roots as the text editor and bash tools (sidebar
+	// folders + allowed_tool_roots). Set to false to disable entirely.
+	"claude_md": true,
+	// When true, Claude can search the web for up-to-date information. Only works
+	// with supported models. Note that each search is billed by Anthropic in
+	// addition to token costs — see their pricing page for current rates.
+	//
+	// https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool
+	//
+	// SECURITY WARNING: Search queries are sent to Anthropic and its search
+	// provider — anything Claude puts into a query string leaves your machine.
+	// Enabling this together with "bash_tool" or "text_editor_tool" is
+	// especially risky: a hostile page Claude has read could trick it (via
+	// prompt injection) into searching for secrets it found locally, leaking
+	// them through the query itself. Narrow the surface with
+	// web_search_allowed_domains whenever possible.
+	"web_search": false,
+	// Max searches per turn. Clamped to the range 1..20 by Claudette.
 	"web_search_max_uses": 5,
+	// Cost per web search in dollars (as of April 2026).
+	"web_search_cost_per_search": 0.01,
 	// Optional: only include results from these domains (e.g. ["example.com", "docs.example.com"]).
 	// Do not set both web_search_allowed_domains and web_search_blocked_domains.
 	"web_search_allowed_domains": [],
 	// Optional: exclude results from these domains.
+	// Do not set both web_search_allowed_domains and web_search_blocked_domains.
 	"web_search_blocked_domains": [],
 	// Optional: localize search results. IANA timezone: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
 	// "web_search_user_location": {
@@ -86,6 +162,35 @@
 	//     "country": "US",
 	//     "timezone": "America/Los_Angeles"
 	// },
+	// When true, Claude can fetch the contents of URLs that already appear in
+	// the conversation (user messages, prior web-search results, etc.). Fetches
+	// run on Anthropic's infrastructure, not on your machine.
+	//
+	// https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-fetch-tool
+	//
+	// SECURITY WARNING: Fetched page contents enter the conversation verbatim,
+	// so a hostile page can contain instructions that try to steer Claude
+	// (prompt injection). Enabling this together with "bash_tool" or
+	// "text_editor_tool" is especially risky: such a page could trick Claude
+	// into reading local files and leaking them back out through a follow-up
+	// fetch or search. web_fetch_allowed_domains or web_fetch_blocked_domains
+	// allow you to limit the content that Claude is allowed to fetch.
+	"web_fetch": false,
+	// Max fetches per turn. Clamped to the range 1..20 by Claudette.
+	"web_fetch_max_uses": 5,
+	// Optional: only fetch from these domains (e.g. ["example.com", "docs.example.com"]).
+	// Do not set both web_fetch_allowed_domains and web_fetch_blocked_domains.
+	"web_fetch_allowed_domains": [],
+	// Optional: never fetch from these domains.
+	// Do not set both web_fetch_allowed_domains and web_fetch_blocked_domains.
+	"web_fetch_blocked_domains": [],
+	// Cap fetched content length (approximate tokens). Keeps hostile or
+	// oversized pages/PDFs from blowing the context window (and limits the
+	// prompt-injection surface of any one fetch). Default 100000 is roughly
+	// half of a 200k-token context. Set to 0 to disable the cap.
+	"web_fetch_max_content_tokens": 100000,
+	// When true, Claude can inline citations to fetched documents in its reply.
+	"web_fetch_citations": true,
 	// Claude pricing per 1M tokens (as of April 2026)
 	// https://www.anthropic.com/pricing#702702
 	"pricing": {

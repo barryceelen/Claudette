@@ -1,4 +1,4 @@
-﻿import random
+import random
 import threading
 
 import sublime
@@ -6,6 +6,7 @@ import sublime_plugin
 
 from ..api.api import ClaudetteClaudeAPI
 from ..api.handler import ClaudetteStreamingResponseHandler
+from ..api.session_stats import format_cost
 from ..constants import PLUGIN_NAME, SETTINGS_FILE, TOOL_STATUS_MESSAGES
 from ..utils import (
     claudette_chat_status_message,
@@ -225,7 +226,10 @@ class ClaudetteAskQuestionCommand(sublime_plugin.WindowCommand):
             sublime.set_timeout(smooth_scroll_to_question, 50)
 
             api = ClaudetteClaudeAPI()
-            use_text_editor = api.settings.get("text_editor_tool", False)
+            use_agent_tool_loop = (
+                api.settings.get("text_editor_tool", False)
+                or api.settings.get("bash_tool", False)
+            )
 
             message_start = self.chat_view.view.size()
 
@@ -250,10 +254,27 @@ class ClaudetteAskQuestionCommand(sublime_plugin.WindowCommand):
                     output_tokens = usage_info.get("output_tokens", 0)
                     cost = usage_info.get("cost", 0.0)
                     session_cost = usage_info.get("session_cost", 0.0)
+                    web_search_requests = usage_info.get(
+                        "web_search_requests", 0
+                    )
+                    session_web_search = usage_info.get(
+                        "session_web_search_requests", web_search_requests
+                    )
+                    web_search_part = ""
+                    if web_search_requests > 0:
+                        web_search_part = (
+                            " Web searches: {0} / {1}."
+                        ).format(web_search_requests, session_web_search)
                     cost_msg = (
-                        "Tokens: {0:,} in, {1:,} out. "
-                        "Cost: ${2:.4f} (${3:.4f} session)\n"
-                    ).format(input_tokens, output_tokens, cost, session_cost)
+                        "Tokens: {0:,} in, {1:,} out.{2} "
+                        "Cost: {3} / {4}\n"
+                    ).format(
+                        input_tokens,
+                        output_tokens,
+                        web_search_part,
+                        format_cost(cost),
+                        format_cost(session_cost),
+                    )
                     claudette_chat_status_message(
                         self.get_window(), cost_msg, "⚡️"
                     )
@@ -263,9 +284,9 @@ class ClaudetteAskQuestionCommand(sublime_plugin.WindowCommand):
             handler = ClaudetteStreamingResponseHandler(
                 view=self.chat_view.view,
                 on_complete=on_complete,
-                response_header_end=message_start,
+                chat_view=self.chat_view,
             )
-            if use_text_editor:
+            if use_agent_tool_loop:
                 target = api.run_with_text_editor_loop
                 args = (
                     handler.append_chunk,

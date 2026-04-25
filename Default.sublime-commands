@@ -60,6 +60,10 @@
 		"command": "claudette_context_clear_files"
 	},
 	{
+		"caption": "Claudette: Create or update CLAUDE.md file",
+		"command": "claudette_init_claude_md"
+	},
+	{
 		"caption": "Claudette: Settings",
 		"command": "edit_settings",
 		"args": {

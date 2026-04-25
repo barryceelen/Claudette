@@ -4,10 +4,13 @@ from ..utils import claudette_chat_status_message
 
 
 class ClaudetteStreamingResponseHandler:
-    def __init__(self, view, on_complete=None, response_header_end=None):
+    def __init__(self, view, on_complete=None, chat_view=None):
         self.view = view
         self.on_complete = on_complete
-        self.response_header_end = response_header_end
+        # ClaudetteChatView, used to clear the pre-stream in-chat tool status
+        # once the first body text is written (must run on the UI thread).
+        self._chat_view = chat_view
+        self._stream_tool_status_cleared = False
         self.line_buffer = ""
         self.at_line_start = True
         self._last_output_char = None
@@ -15,9 +18,20 @@ class ClaudetteStreamingResponseHandler:
         self._completed = False
         self._usage_info = None
 
+    def _clear_in_chat_tool_status_on_first_write(self):
+        if self._stream_tool_status_cleared:
+            return
+        self._stream_tool_status_cleared = True
+        if self._chat_view is not None and hasattr(
+            self._chat_view, "clear_tool_status"
+        ):
+            cv = self._chat_view
+            sublime.set_timeout(lambda: cv.clear_tool_status(), 0)
+
     def _output_text(self, text):
         """Output text to the view."""
         if text:
+            self._clear_in_chat_tool_status_on_first_write()
             self.view.set_read_only(False)
             self.view.run_command(
                 "append",
@@ -26,40 +40,35 @@ class ClaudetteStreamingResponseHandler:
             self.view.set_read_only(True)
             self._last_output_char = text[-1]
 
-    def _insert_at_response_header(self, text):
-        """Insert text after # Claude's Response (before streamed body)."""
-        if self.response_header_end is None or not text:
+    def _ensure_blank_line(self):
+        """Pad the view so the next output starts after a blank line.
+
+        Inspects the last two characters already in the view so the
+        separator is correct regardless of whether the streamed text
+        ended with a trailing newline.
+        """
+        size = self.view.size()
+        if size == 0:
             return
-        pos = self.response_header_end
-        self.view.set_read_only(False)
-        try:
-            self.view.sel().clear()
-            self.view.sel().add(sublime.Region(pos, pos))
-            self.view.run_command("insert", {"characters": text})
-            self.view.sel().clear()
-            self.view.sel().add(
-                sublime.Region(self.view.size(), self.view.size())
-            )
-        finally:
-            self.view.set_read_only(True)
-        if text:
-            self._last_output_char = text[-1]
+        start = max(0, size - 2)
+        tail = self.view.substr(sublime.Region(start, size))
+        if tail.endswith("\n\n"):
+            return
+        if tail.endswith("\n"):
+            self._output_text("\n")
+        else:
+            self._output_text("\n\n")
 
     def append_chunk(
         self,
         chunk,
         is_done=False,
-        insert_after_response_header=False,
         defer_to_end=False,
         was_cancelled=False,
         usage_info=None,
     ):
         if usage_info:
             self._usage_info = usage_info
-
-        if insert_after_response_header and chunk:
-            self._insert_at_response_header(chunk)
-            return
 
         if defer_to_end and chunk:
             self._deferred_chunks.append(chunk)
@@ -82,21 +91,21 @@ class ClaudetteStreamingResponseHandler:
                 self.on_complete()
             return
 
-        # Line break when a new sentence starts without separator
-        # (e.g. "results.Based")
-        if (
-            chunk
-            and chunk[0].isupper()
-            and self._last_output_char is not None
-            and self._last_output_char in ".!?"
-            and not self.at_line_start
-        ):
-            self._output_text("\n")
-            self.at_line_start = True
-
         # Process chunk character by character to convert h1 headings to h2,
         # keeping h1 reserved for user questions in the symbol list.
         for char in chunk:
+            # Line break when a new sentence starts without a separator
+            # (e.g. "results.Based" or "once!Based"). Checked per character
+            # so it also catches cases that arrive inside a single chunk.
+            if (
+                char.isupper()
+                and self._last_output_char is not None
+                and self._last_output_char in ".!?"
+                and not self.at_line_start
+            ):
+                self._output_text("\n")
+                self.at_line_start = True
+
             if self.at_line_start:
                 self.line_buffer += char
                 if self.line_buffer == "# ":
@@ -129,8 +138,11 @@ class ClaudetteStreamingResponseHandler:
             self.line_buffer = ""
 
         if is_done:
-            # Output deferred content (e.g. Search Results) after the answer
+            # Output deferred content (e.g. the Sources block) after the
+            # streamed answer, guaranteeing a blank-line separator so the
+            # heading always renders as a paragraph of its own.
             if self._deferred_chunks:
+                self._ensure_blank_line()
                 for deferred in self._deferred_chunks:
                     self._output_text(deferred)
                 self._deferred_chunks = []

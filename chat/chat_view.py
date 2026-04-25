@@ -7,6 +7,7 @@ import sublime_plugin
 from ..api.cancellation import CancellationToken
 from ..constants import PLUGIN_NAME, SPINNER_CHARS, SPINNER_INTERVAL_MS
 from ..utils import claudette_cleanup_copy_path_phantoms_for_view
+from .confirmation import ConfirmationManager
 from .fenced_code import (
     ClaudetteCodeBlock,
     find_fenced_code_blocks,
@@ -125,6 +126,11 @@ class ClaudetteChatView:
         self._tool_status_spinner_index = {}
         self._tool_status_message = {}
         self._cancellation_tokens = {}  # view_id -> CancellationToken
+        self.confirmation = ConfirmationManager(window)
+        # Set by ``ClaudetteAPI`` while a request is in flight so the
+        # confirmation manager can pause the status-bar spinner while a
+        # prompt is awaiting input (see ``confirmation.request``).
+        self.active_spinner = None
 
     def _configure_new_chat_view(self, view):
         """Apply chat view options from package settings."""
@@ -228,7 +234,14 @@ class ClaudetteChatView:
         """Build HTML for the status line: info icon + message + spinner."""
         escaped_msg = self.escape_html(message)
         escaped_char = self.escape_html(spinner_char)
-        return ("ℹ️ {0} {1}").format(escaped_msg, escaped_char)
+        return (
+            '<body id="claudette-tool-status">'
+            "<style>"
+            "body#claudette-tool-status {{ padding-top: 0.4rem; }}"
+            "</style>"
+            '<div class="claudette-tool-status-line">ℹ️ {0} {1}</div>'
+            "</body>"
+        ).format(escaped_msg, escaped_char)
 
     def set_tool_status(self, message):
         """
@@ -253,7 +266,7 @@ class ClaudetteChatView:
         phantom_set = self._get_tool_status_phantom_set(self.view)
         region = sublime.Region(self.view.size(), self.view.size())
         html = self._tool_status_phantom_html(message, char)
-        phantom = sublime.Phantom(region, html, sublime.LAYOUT_INLINE, None)
+        phantom = sublime.Phantom(region, html, sublime.LAYOUT_BLOCK, None)
         already_running = len(phantom_set.phantoms) > 0
         phantom_set.update([phantom])
         if not already_running:
@@ -277,7 +290,7 @@ class ClaudetteChatView:
         phantom_set = self._get_tool_status_phantom_set(self.view)
         region = sublime.Region(self.view.size(), self.view.size())
         html = self._tool_status_phantom_html(message, char)
-        phantom = sublime.Phantom(region, html, sublime.LAYOUT_INLINE, None)
+        phantom = sublime.Phantom(region, html, sublime.LAYOUT_BLOCK, None)
         phantom_set.update([phantom])
         sublime.set_timeout(
             lambda: self._schedule_tool_status_spinner(), SPINNER_INTERVAL_MS
@@ -551,6 +564,18 @@ class ClaudetteChatView:
         self._tool_status_active.pop(view_id, None)
         self._tool_status_spinner_index.pop(view_id, None)
         self._tool_status_message.pop(view_id, None)
+        # Cancel any pending confirmation bound to this view so the blocked
+        # worker thread can return cleanly.
+        target_view = None
+        if self.view is not None and self.view.id() == view_id:
+            target_view = self.view
+        else:
+            for v in self.window.views() if self.window else []:
+                if v.id() == view_id:
+                    target_view = v
+                    break
+        if target_view is not None and self.confirmation is not None:
+            self.confirmation.cancel_for_view(target_view)
         # Cancel and remove any active request token for this view
         token = self._cancellation_tokens.pop(view_id, None)
         if token and not token.is_cancelled():
@@ -592,6 +617,58 @@ class ClaudetteChatView:
             view_id = self.view.id() if self.view else None
         if view_id is not None:
             self._cancellation_tokens.pop(view_id, None)
+
+    def request_confirmation(
+        self,
+        request,
+        view_id: Optional[int] = None,
+        spinner=None,
+    ) -> str:
+        """Worker-thread helper: prompt the user and return the chosen option id.
+
+        Renders the confirmation in the given chat tab (defaults to the
+        manager's current ``self.view``). Returns the option id or
+        ``RESULT_CANCELLED`` from ``confirmation`` if the view closed or the
+        timeout elapsed.
+
+        While the prompt is open we also pause the tool-status phantom
+        ("ℹ️ <label> ⣾") so the user doesn't see a stale activity indicator
+        animating over the confirmation; the phantom is restored after the
+        user answers. Callers may pass an explicit ``spinner`` to pause the
+        Sublime status-bar animation — otherwise the manager's own
+        ``active_spinner`` (set by the API while a request is in flight) is
+        used.
+        """
+        target = None
+        if view_id is not None and self.window is not None:
+            for v in self.window.views():
+                if v.id() == view_id:
+                    target = v
+                    break
+        if target is None:
+            target = self.view
+        if target is None:
+            from .confirmation import RESULT_CANCELLED
+
+            return RESULT_CANCELLED
+
+        effective_spinner = spinner if spinner is not None else self.active_spinner
+
+        target_id = target.id()
+        saved_status = None
+        if self._tool_status_active.get(target_id, False):
+            saved_status = self._tool_status_message.get(target_id)
+            sublime.set_timeout(lambda: self.clear_tool_status(), 0)
+
+        try:
+            return self.confirmation.request(
+                target, request, spinner=effective_spinner
+            )
+        finally:
+            if saved_status:
+                sublime.set_timeout(
+                    lambda m=saved_status: self.set_tool_status(m), 0
+                )
 
     def has_active_request(self, view_id: Optional[int] = None) -> bool:
         """Check if there is an active request that can be cancelled."""

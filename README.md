@@ -14,6 +14,8 @@ Type "Ask Question" in the command palette or find the *Claudette > Ask Question
 - Choose between different Claude [models](https://docs.anthropic.com/en/docs/about-claude/models)
 - Configure custom [system prompts](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/system-prompts) to customize Claude's behavior
 - Chat History: Export and import conversations as JSON files
+- Supports `CLAUDE.md` files for project-level context
+- Optional [web search tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool)
 
 ## Commands
 
@@ -76,9 +78,13 @@ Claudette chat is powered by Claude 3.5 Sonnet by default, but you can switch be
 *claudette\_select\_system\_message\_panel*  
 Improve Claude's performance by using a [system prompt](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/system-prompts). You can create and manage multiple prompts.
 
-- **Switch API Key**
-*claudette\_select\_api\_key\_panel*
+- **Switch API Key**  
+*claudette\_select\_api\_key\_panel*  
 Claudette allows using multiple API keys.
+
+- **Create or update CLAUDE.md file**  
+*claudette\_init\_claude\_md*  
+Ask Claude to analyze the current project and write a starter `CLAUDE.md` (build/test commands, code style, conventions).
 
 ## Keyboard shortcuts
 

@@ -8,6 +8,7 @@ def _default_session_stats():
         "output_tokens": 0,
         "cost": 0.0,
         "web_search_requests": 0,
+        "web_fetch_requests": 0,
     }
 
 
@@ -47,9 +48,10 @@ def calculate_cost(
         return 0
 
     # Pricing is per 1M tokens
-    input_cost = ((input_tokens - cache_read_tokens) / 1_000_000) * price_tier[
-        "input"
-    ]
+    # Non-cached input tokens are charged at the full input rate.
+    # Clamp to zero in case cache tokens exceed input_tokens.
+    non_cached_tokens = max(0, input_tokens - cache_read_tokens - cache_write_tokens)
+    input_cost = (non_cached_tokens / 1_000_000) * price_tier["input"]
     output_cost = (output_tokens / 1_000_000) * price_tier["output"]
     cache_write_cost = (cache_write_tokens / 1_000_000) * price_tier.get(
         "cache_write", 0
@@ -61,8 +63,40 @@ def calculate_cost(
     return input_cost + output_cost + cache_write_cost + cache_read_cost
 
 
+def format_cost(cost):
+    """Format a dollar cost with conditional precision.
+
+    Uses two decimal places for costs of $0.01 or more, and four decimal
+    places for smaller non-zero costs so sub-cent amounts don't render as
+    ``$0.00``. Zero and negative values always render as ``$0.00``.
+
+    Args:
+        cost: The cost in dollars.
+
+    Returns:
+        str: A formatted cost string prefixed with ``$``.
+    """
+    try:
+        value = float(cost)
+    except (TypeError, ValueError):
+        return "$0.00"
+
+    if value <= 0:
+        return "$0.00"
+
+    if value < 0.01:
+        return "${0:.4f}".format(value)
+
+    return "${0:.2f}".format(value)
+
+
 def update_session_stats(
-    view, input_tokens, output_tokens, cost, web_search_requests=0
+    view,
+    input_tokens,
+    output_tokens,
+    cost,
+    web_search_requests=0,
+    web_fetch_requests=0,
 ):
     """Update the session stats stored on a view's settings.
 
@@ -75,6 +109,7 @@ def update_session_stats(
         output_tokens: Tokens to add to session output total.
         cost: Cost to add to session total.
         web_search_requests: Web search requests to add to session total.
+        web_fetch_requests: web_fetch tool calls to add to session total.
 
     Returns:
         dict: The updated session stats, or None if view has no settings.
@@ -87,6 +122,8 @@ def update_session_stats(
 
     if "web_search_requests" not in sess:
         sess["web_search_requests"] = 0
+    if "web_fetch_requests" not in sess:
+        sess["web_fetch_requests"] = 0
 
     sess["input_tokens"] = sess.get("input_tokens", 0) + input_tokens
     sess["output_tokens"] = sess.get("output_tokens", 0) + output_tokens
@@ -94,33 +131,61 @@ def update_session_stats(
     sess["web_search_requests"] = (
         sess.get("web_search_requests", 0) + web_search_requests
     )
+    sess["web_fetch_requests"] = (
+        sess.get("web_fetch_requests", 0) + web_fetch_requests
+    )
 
     settings.set("claudette_session_stats", sess)
     return sess
 
 
 def format_status_message(
-    input_tokens, output_tokens, cache_info, current_cost, session_cost
+    input_tokens,
+    output_tokens,
+    current_cost,
+    session_cost,
+    cache_read_tokens=0,
+    cache_write_tokens=0,
+    web_search_requests=0,
+    web_fetch_requests=0,
 ):
     """Format a status bar message with token and cost information.
 
     Args:
         input_tokens: Number of input tokens for this message.
         output_tokens: Number of output tokens for this message.
-        cache_info: A string like " (cache read: 1,234)" or empty.
         current_cost: Cost of the current message.
         session_cost: Total session cost so far.
+        cache_read_tokens: Number of tokens read from cache.
+        cache_write_tokens: Number of tokens written to cache.
+        web_search_requests: Number of web searches in this message.
+        web_fetch_requests: Number of web_fetch tool uses in this message.
 
     Returns:
         str: The formatted status message.
     """
-    status = "Tokens: {0:,} sent, {1:,} received{2}.".format(
-        input_tokens, output_tokens, cache_info
-    )
+    parts = []
+    parts.append("{0:,} in, {1:,} out".format(input_tokens, output_tokens))
+
+    cache_parts = []
+    if cache_read_tokens > 0:
+        cache_parts.append("{0:,} cache read".format(cache_read_tokens))
+    if cache_write_tokens > 0:
+        cache_parts.append("{0:,} cache write".format(cache_write_tokens))
+    if cache_parts:
+        parts.append(", ".join(cache_parts))
+
+    status = "Tokens: " + ", ".join(parts) + "."
+
+    if web_search_requests > 0:
+        status += " Web searches: {0}.".format(web_search_requests)
+
+    if web_fetch_requests > 0:
+        status += " Web fetches: {0}.".format(web_fetch_requests)
 
     if session_cost > 0:
-        status += " Cost: ${0:.4f} message, ${1:.4f} session.".format(
-            current_cost, session_cost
+        status += " Cost: {0} ({1} session)".format(
+            format_cost(current_cost), format_cost(session_cost)
         )
 
     return status
