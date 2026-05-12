@@ -77,31 +77,39 @@ class ClaudetteAskQuestionCommand(sublime_plugin.WindowCommand):
         if not self.create_chat_panel():
             return
 
-        api_key = claudette_get_api_key_value()
+        self.load_settings()
+        provider = (
+            self.settings.get("provider", "anthropic")
+            if self.settings
+            else "anthropic"
+        )
 
-        if not api_key:
-            window = self.get_window()
-            claudette_chat_status_message(
-                window,
-                (
-                    "Please add your Claude API key via the "
-                    "`Settings > Package Settings > Claudette` menu."
-                ),
-                "⚠️",
-            )
-            claudette_chat_status_message(
-                window,
-                (
-                    "Claudette allows you to define a single key, or you can "
-                    "add multiple keys each with their own name. For example, "
-                    'you can define a "Work" and "Personal" key. If you have '
-                    "multiple API keys defined the "
-                    "`Claudette: Switch API Key` command allows you switch "
-                    "between them."
-                ),
-                "",
-            )
-            return
+        if provider != "bedrock":
+            api_key = claudette_get_api_key_value()
+
+            if not api_key:
+                window = self.get_window()
+                claudette_chat_status_message(
+                    window,
+                    (
+                        "Please add your Claude API key via the "
+                        "`Settings > Package Settings > Claudette` menu."
+                    ),
+                    "⚠️",
+                )
+                claudette_chat_status_message(
+                    window,
+                    (
+                        "Claudette allows you to define a single key, or you "
+                        "can add multiple keys each with their own name. For "
+                        "example, you can define a \"Work\" and \"Personal\" "
+                        "key. If you have multiple API keys defined the "
+                        "`Claudette: Switch API Key` command allows you "
+                        "switch between them."
+                    ),
+                    "",
+                )
+                return
 
         self.send_to_claude(code, question.strip())
 
