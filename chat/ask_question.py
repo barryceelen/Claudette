@@ -102,7 +102,7 @@ class ClaudetteAskQuestionCommand(sublime_plugin.WindowCommand):
                     (
                         "Claudette allows you to define a single key, or you "
                         "can add multiple keys each with their own name. For "
-                        "example, you can define a \"Work\" and \"Personal\" "
+                        'example, you can define a "Work" and "Personal" '
                         "key. If you have multiple API keys defined the "
                         "`Claudette: Switch API Key` command allows you "
                         "switch between them."

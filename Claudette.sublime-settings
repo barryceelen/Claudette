@@ -10,6 +10,9 @@
 	//   2. AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY environment variables
 	//   3. aws_profile setting (calls `aws configure export-credentials`)
 	//   4. Default profile via `aws configure export-credentials`
+	// Steps 3 and 4 require the AWS CLI v2 to be installed and on PATH.
+	// Resolved credentials are cached per profile until their reported
+	// Expiration (or for ~15 minutes when no expiration is reported).
 	// "aws_access_key_id": "",
 	// "aws_secret_access_key": "",
 	// "aws_session_token": "",

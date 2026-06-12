@@ -1,6 +1,5 @@
 import json
 import os
-import select
 import socket
 import ssl
 import urllib.error
@@ -27,11 +26,11 @@ from ..utils import claudette_chat_status_message, claudette_get_api_key_value
 from . import session_stats
 from .bedrock import (
     BEDROCK_ANTHROPIC_VERSION,
+    BedrockHTTPError,
     bedrock_request,
     get_aws_credentials,
     parse_event_stream,
 )
-from .cancellation import CancellationToken
 from .errors import (
     handle_model_not_found,
     is_model_not_found_error,
@@ -45,6 +44,8 @@ from .tools import (
     parse_web_search_items,
 )
 
+KNOWN_PROVIDERS = ("anthropic", "bedrock")
+
 
 class CancelledException(Exception):
     """Raised when a request is cancelled."""
@@ -55,7 +56,16 @@ class CancelledException(Exception):
 class ClaudetteClaudeAPI:
     def __init__(self):
         self.settings = sublime.load_settings(SETTINGS_FILE)
-        self.provider = self.settings.get("provider", "anthropic")
+        provider = self.settings.get("provider", "anthropic")
+        if provider not in KNOWN_PROVIDERS:
+            print(
+                "Claudette: unknown provider {0!r}; falling back to "
+                "'anthropic'. Valid values: {1}.".format(
+                    provider, ", ".join(KNOWN_PROVIDERS)
+                )
+            )
+            provider = "anthropic"
+        self.provider = provider
         self.api_key = claudette_get_api_key_value()
         self.base_url = self.settings.get("base_url", DEFAULT_BASE_URL)
         self.aws_region = self.settings.get("aws_region", "us-east-1")
@@ -406,6 +416,21 @@ class ClaudetteClaudeAPI:
                         return
                     handle_error("[Error] {0}".format(error_message))
                     return
+                except BedrockHTTPError as e:
+                    self.spinner.stop()
+                    if chat_view_for_status:
+                        sublime.set_timeout(
+                            lambda: chat_view_for_status.clear_tool_status(), 0
+                        )
+                    if is_model_not_found_error(
+                        e.status, e.error_type, e.message
+                    ):
+                        handle_model_not_found(
+                            e.message, window, settings, handle_error
+                        )
+                        return
+                    handle_error("[Error] {0}".format(e.message))
+                    return
                 except urllib.error.URLError as e:
                     self.spinner.stop()
                     if chat_view_for_status:
@@ -719,9 +744,26 @@ class ClaudetteClaudeAPI:
                 stream_current_block_index = None
 
                 def _iter_events_sse(response):
-                    """Yield parsed JSON dicts from Anthropic SSE stream."""
-                    for line in response:
-                        if not line or line.isspace():
+                    """Yield parsed JSON dicts from Anthropic SSE stream.
+
+                    Sets a short socket timeout so blocking readline()s can
+                    be interrupted; the cancellation token is polled between
+                    lines and on each timeout retry.
+                    """
+                    try:
+                        response.fp._sock.settimeout(0.5)
+                    except Exception:
+                        pass
+                    while True:
+                        if is_cancelled():
+                            return
+                        try:
+                            line = response.readline()
+                        except socket.timeout:
+                            continue
+                        if not line:
+                            return
+                        if line.isspace():
                             continue
                         chunk = line.decode("utf-8")
                         if not chunk.startswith("data: "):
@@ -742,7 +784,9 @@ class ClaudetteClaudeAPI:
                             self.aws_region, self.model, data, credentials,
                             streaming=True, verify_ssl=self.verify_ssl,
                         )
-                        return resp, parse_event_stream(resp)
+                        return resp, parse_event_stream(
+                            resp, should_cancel=is_cancelled
+                        )
                     else:
                         headers = {
                             "x-api-key": self.api_key,
@@ -1054,6 +1098,17 @@ class ClaudetteClaudeAPI:
 
                         except Exception:
                             continue
+
+                    # Loop exited. If it was due to cancellation, signal it
+                    # so the chat view can clear the response heading and
+                    # the active-request token.
+                    if is_cancelled():
+                        sublime.set_timeout(
+                            lambda: chunk_callback(
+                                "", is_done=True, was_cancelled=True
+                            ),
+                            0,
+                        )
                 finally:
                     if hasattr(response, "close"):
                         response.close()
@@ -1069,6 +1124,16 @@ class ClaudetteClaudeAPI:
                     handle_error("[Error] {0}".format(error_message))
             except urllib.error.URLError as e:
                 handle_error("[Error] {0}".format(str(e)))
+            except BedrockHTTPError as e:
+                if is_model_not_found_error(
+                    e.status, e.error_type, e.message
+                ):
+                    window = chat_view.window() if chat_view else None
+                    handle_model_not_found(
+                        e.message, window, self.settings, handle_error
+                    )
+                else:
+                    handle_error("[Error] {0}".format(e.message))
             except RuntimeError as e:
                 handle_error("[Error] {0}".format(str(e)))
             finally:
@@ -1081,14 +1146,29 @@ class ClaudetteClaudeAPI:
     def fetch_models(self):
 
         if self._is_bedrock:
+            # Verified currently-shipping Bedrock model IDs (as of 2026-06).
+            # If the model you want isn't here (e.g. Opus 4.7/4.8 reachable
+            # only via InvokeModel without an ARN-versioned id), set the
+            # `model` setting directly.
             return [
-                "anthropic.claude-sonnet-4-6-20250514-v1:0",
-                "anthropic.claude-opus-4-7-20250514-v1:0",
-                "anthropic.claude-sonnet-4-5-20241022-v2:0",
-                "anthropic.claude-haiku-4-5-20241022-v1:0",
-                "us.anthropic.claude-sonnet-4-6-20250514-v1:0",
-                "us.anthropic.claude-sonnet-4-5-20241022-v2:0",
-                "us.anthropic.claude-haiku-4-5-20241022-v1:0",
+                "anthropic.claude-opus-4-6-v1",
+                "anthropic.claude-opus-4-5-20251101-v1:0",
+                "anthropic.claude-sonnet-4-6",
+                "anthropic.claude-sonnet-4-5-20250929-v1:0",
+                "anthropic.claude-haiku-4-5-20251001-v1:0",
+                "us.anthropic.claude-opus-4-6-v1",
+                "us.anthropic.claude-opus-4-5-20251101-v1:0",
+                "us.anthropic.claude-sonnet-4-6",
+                "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+                "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                "eu.anthropic.claude-opus-4-6-v1",
+                "eu.anthropic.claude-sonnet-4-6",
+                "eu.anthropic.claude-sonnet-4-5-20250929-v1:0",
+                "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+                "apac.anthropic.claude-opus-4-6-v1",
+                "global.anthropic.claude-opus-4-6-v1",
+                "global.anthropic.claude-sonnet-4-6",
+                "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
             ]
 
         if not self.api_key:

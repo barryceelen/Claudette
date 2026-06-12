@@ -38,6 +38,9 @@ def calculate_cost(
     price_tier = None
     model_lower = model.lower()
 
+    # Tier keys (haiku/sonnet/opus) are matched as case-insensitive
+    # substrings, so this also resolves Bedrock model ids like
+    # "us.anthropic.claude-sonnet-4-5-20250929-v1:0".
     for tier in pricing.keys():
         if tier in model_lower:
             price_tier = pricing[tier]
