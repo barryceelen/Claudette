@@ -1,6 +1,5 @@
 import json
 import os
-import select
 import socket
 import ssl
 import urllib.error
@@ -25,7 +24,13 @@ from ..tools.text_editor import (
 )
 from ..utils import claudette_chat_status_message, claudette_get_api_key_value
 from . import session_stats
-from .cancellation import CancellationToken
+from .bedrock import (
+    BEDROCK_ANTHROPIC_VERSION,
+    BedrockHTTPError,
+    bedrock_request,
+    get_aws_credentials,
+    parse_event_stream,
+)
 from .errors import (
     handle_model_not_found,
     is_model_not_found_error,
@@ -39,6 +44,8 @@ from .tools import (
     parse_web_search_items,
 )
 
+KNOWN_PROVIDERS = ("anthropic", "bedrock")
+
 
 class CancelledException(Exception):
     """Raised when a request is cancelled."""
@@ -49,8 +56,19 @@ class CancelledException(Exception):
 class ClaudetteClaudeAPI:
     def __init__(self):
         self.settings = sublime.load_settings(SETTINGS_FILE)
+        provider = self.settings.get("provider", "anthropic")
+        if provider not in KNOWN_PROVIDERS:
+            print(
+                "Claudette: unknown provider {0!r}; falling back to "
+                "'anthropic'. Valid values: {1}.".format(
+                    provider, ", ".join(KNOWN_PROVIDERS)
+                )
+            )
+            provider = "anthropic"
+        self.provider = provider
         self.api_key = claudette_get_api_key_value()
         self.base_url = self.settings.get("base_url", DEFAULT_BASE_URL)
+        self.aws_region = self.settings.get("aws_region", "us-east-1")
         try:
             self.max_tokens = int(self.settings.get("max_tokens", MAX_TOKENS))
         except (TypeError, ValueError):
@@ -63,6 +81,22 @@ class ClaudetteClaudeAPI:
         self.spinner = ClaudetteSpinner()
         self.pricing = self.settings.get("pricing")
         self.verify_ssl = self.settings.get("verify_ssl", DEFAULT_VERIFY_SSL)
+
+    @property
+    def _is_bedrock(self):
+        return self.provider == "bedrock"
+
+    def _get_bedrock_credentials(self):
+        """Get AWS credentials, raising a clear error if unavailable."""
+        credentials = get_aws_credentials(self.settings)
+        if not credentials:
+            raise RuntimeError(
+                "AWS credentials not found. Configure aws_profile, "
+                "aws_access_key_id/aws_secret_access_key in settings, "
+                "or set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY "
+                "environment variables."
+            )
+        return credentials
 
     def _get_ssl_context(self):
         """Create and return an SSL context based on verify_ssl setting."""
@@ -213,23 +247,40 @@ class ClaudetteClaudeAPI:
         reading the response body so the user isn't stuck waiting for
         the full HTTP timeout.
         """
+        data = {
+            "messages": messages,
+            "max_tokens": self.max_tokens,
+            "system": system_messages,
+            "temperature": self.get_valid_temperature(self.temperature),
+        }
+        if tools_list:
+            data["tools"] = tools_list
+
+        if self._is_bedrock:
+            data["anthropic_version"] = BEDROCK_ANTHROPIC_VERSION
+            credentials = self._get_bedrock_credentials()
+            body = bedrock_request(
+                self.aws_region, self.model, data, credentials,
+                streaming=False, verify_ssl=self.verify_ssl,
+            )
+            msg = (
+                body.get("message")
+                if body.get("message") is not None
+                else body
+            )
+            if not isinstance(msg, dict):
+                msg = {}
+            usage = body.get("usage") or msg.get("usage") or {}
+            return msg, usage
+
+        data["model"] = self.model
+        data["stream"] = False
         headers = {
             "x-api-key": self.api_key,
             "anthropic-version": ANTHROPIC_VERSION,
             "content-type": "application/json",
         }
         headers.update(self._get_custom_headers())
-
-        data = {
-            "messages": messages,
-            "max_tokens": self.max_tokens,
-            "model": self.model,
-            "stream": False,
-            "system": system_messages,
-            "temperature": self.get_valid_temperature(self.temperature),
-        }
-        if tools_list:
-            data["tools"] = tools_list
 
         req = urllib.request.Request(
             urllib.parse.urljoin(self.base_url, "messages"),
@@ -304,7 +355,7 @@ class ClaudetteClaudeAPI:
         if not filtered:
             return
 
-        if not self.api_key:
+        if not self._is_bedrock and not self.api_key:
             handle_error(
                 "[Error] The API key is not set. Please check your API key "
                 "configuration."
@@ -364,6 +415,21 @@ class ClaudetteClaudeAPI:
                         )
                         return
                     handle_error("[Error] {0}".format(error_message))
+                    return
+                except BedrockHTTPError as e:
+                    self.spinner.stop()
+                    if chat_view_for_status:
+                        sublime.set_timeout(
+                            lambda: chat_view_for_status.clear_tool_status(), 0
+                        )
+                    if is_model_not_found_error(
+                        e.status, e.error_type, e.message
+                    ):
+                        handle_model_not_found(
+                            e.message, window, settings, handle_error
+                        )
+                        return
+                    handle_error("[Error] {0}".format(e.message))
                     return
                 except urllib.error.URLError as e:
                     self.spinner.stop()
@@ -638,7 +704,7 @@ class ClaudetteClaudeAPI:
         ):
             return
 
-        if not self.api_key:
+        if not self._is_bedrock and not self.api_key:
             handle_error(
                 "[Error] The API key is not set. Please check your API key "
                 "configuration."
@@ -647,13 +713,6 @@ class ClaudetteClaudeAPI:
 
         try:
             self.spinner.start("Fetching response")
-
-            headers = {
-                "x-api-key": self.api_key,
-                "anthropic-version": ANTHROPIC_VERSION,
-                "content-type": "application/json",
-            }
-            headers.update(self._get_custom_headers())
 
             filtered_messages = [
                 msg for msg in messages if self._message_has_content(msg)
@@ -664,8 +723,6 @@ class ClaudetteClaudeAPI:
             data = {
                 "messages": filtered_messages,
                 "max_tokens": self.max_tokens,
-                "model": self.model,
-                "stream": True,
                 "system": system_messages,
                 "temperature": self.get_valid_temperature(self.temperature),
             }
@@ -674,12 +731,11 @@ class ClaudetteClaudeAPI:
             if web_search_tool:
                 data["tools"] = [web_search_tool]
 
-            req = urllib.request.Request(
-                urllib.parse.urljoin(self.base_url, "messages"),
-                data=json.dumps(data).encode("utf-8"),
-                headers=headers,
-                method="POST",
-            )
+            if self._is_bedrock:
+                data["anthropic_version"] = BEDROCK_ANTHROPIC_VERSION
+            else:
+                data["model"] = self.model
+                data["stream"] = True
 
             try:
                 ssl_context = self._get_ssl_context()
@@ -687,82 +743,75 @@ class ClaudetteClaudeAPI:
                 stream_current_block_type = None
                 stream_current_block_index = None
 
-                # Use a timeout so connection doesn't hang forever
-                with urllib.request.urlopen(
-                    req, context=ssl_context, timeout=30
-                ) as response:
-                    # Get socket for select-based polling with timeout
-                    # This allows us to periodically check for cancellation
-                    sock = None
+                def _iter_events_sse(response):
+                    """Yield parsed JSON dicts from Anthropic SSE stream.
+
+                    Sets a short socket timeout so blocking readline()s can
+                    be interrupted; the cancellation token is polled between
+                    lines and on each timeout retry.
+                    """
                     try:
-                        # Try to get the underlying socket
-                        if hasattr(response.fp, "raw"):
-                            raw = response.fp.raw
-                            if hasattr(raw, "_sock"):
-                                sock = raw._sock
+                        response.fp._sock.settimeout(0.5)
                     except Exception:
                         pass
-
-                    # When we cannot extract the raw socket for select(),
-                    # set a short read timeout so readline() doesn't block
-                    # indefinitely — this lets us check cancellation often.
-                    if sock is None:
-                        try:
-                            response.fp._sock.settimeout(0.5)
-                        except Exception:
-                            pass
-
                     while True:
-                        # Check for cancellation before reading
                         if is_cancelled():
-                            response.close()
-                            sublime.set_timeout(
-                                lambda: chunk_callback(
-                                    "", is_done=True, was_cancelled=True
-                                ),
-                                0,
-                            )
                             return
-
-                        # Use select to wait for data with timeout
-                        if sock is not None:
-                            try:
-                                ready, _, _ = select.select(
-                                    [sock], [], [], 0.3
-                                )
-                                if not ready:
-                                    # Timeout, check cancellation and retry
-                                    continue
-                            except (ValueError, OSError, TypeError):
-                                # Socket issue, fall through to blocking read
-                                sock = None
-                                try:
-                                    response.fp._sock.settimeout(0.5)
-                                except Exception:
-                                    pass
-
                         try:
                             line = response.readline()
                         except socket.timeout:
-                            # Read timed out — loop back to check cancellation
                             continue
                         if not line:
-                            # End of stream
-                            break
-
+                            return
                         if line.isspace():
                             continue
+                        chunk = line.decode("utf-8")
+                        if not chunk.startswith("data: "):
+                            continue
+                        chunk = chunk[6:]
+                        if chunk.strip() == "[DONE]":
+                            return
+                        try:
+                            yield json.loads(chunk)
+                        except (json.JSONDecodeError, ValueError):
+                            continue
+
+                def _open_and_iter():
+                    """Open connection and return (response, event_iter)."""
+                    if self._is_bedrock:
+                        credentials = self._get_bedrock_credentials()
+                        resp = bedrock_request(
+                            self.aws_region, self.model, data, credentials,
+                            streaming=True, verify_ssl=self.verify_ssl,
+                        )
+                        return resp, parse_event_stream(
+                            resp, should_cancel=is_cancelled
+                        )
+                    else:
+                        headers = {
+                            "x-api-key": self.api_key,
+                            "anthropic-version": ANTHROPIC_VERSION,
+                            "content-type": "application/json",
+                        }
+                        headers.update(self._get_custom_headers())
+                        req = urllib.request.Request(
+                            urllib.parse.urljoin(self.base_url, "messages"),
+                            data=json.dumps(data).encode("utf-8"),
+                            headers=headers,
+                            method="POST",
+                        )
+                        resp = urllib.request.urlopen(
+                            req, context=ssl_context, timeout=30
+                        )
+                        return resp, _iter_events_sse(resp)
+
+                response, event_iter = _open_and_iter()
+                try:
+                    for data in event_iter:
+                        if is_cancelled():
+                            break
 
                         try:
-                            chunk = line.decode("utf-8")
-                            if not chunk.startswith("data: "):
-                                continue
-
-                            chunk = chunk[6:]  # Remove 'data: ' prefix
-                            if chunk.strip() == "[DONE]":
-                                break
-
-                            data = json.loads(chunk)
 
                             # Get initial input tokens from message_start
                             if data.get("type") == "message_start":
@@ -1048,8 +1097,21 @@ class ClaudetteClaudeAPI:
                                 )
 
                         except Exception:
-                            # Skip invalid chunks without error messages
                             continue
+
+                    # Loop exited. If it was due to cancellation, signal it
+                    # so the chat view can clear the response heading and
+                    # the active-request token.
+                    if is_cancelled():
+                        sublime.set_timeout(
+                            lambda: chunk_callback(
+                                "", is_done=True, was_cancelled=True
+                            ),
+                            0,
+                        )
+                finally:
+                    if hasattr(response, "close"):
+                        response.close()
 
             except urllib.error.HTTPError as e:
                 error_type, error_message = parse_api_error(e)
@@ -1061,15 +1123,53 @@ class ClaudetteClaudeAPI:
                 else:
                     handle_error("[Error] {0}".format(error_message))
             except urllib.error.URLError as e:
-                handle_error(f"[Error] {str(e)}")
+                handle_error("[Error] {0}".format(str(e)))
+            except BedrockHTTPError as e:
+                if is_model_not_found_error(
+                    e.status, e.error_type, e.message
+                ):
+                    window = chat_view.window() if chat_view else None
+                    handle_model_not_found(
+                        e.message, window, self.settings, handle_error
+                    )
+                else:
+                    handle_error("[Error] {0}".format(e.message))
+            except RuntimeError as e:
+                handle_error("[Error] {0}".format(str(e)))
             finally:
                 self.spinner.stop()
 
         except Exception as e:
-            handle_error(f"[Error] {str(e)}")
+            handle_error("[Error] {0}".format(str(e)))
             self.spinner.stop()
 
     def fetch_models(self):
+
+        if self._is_bedrock:
+            # Verified currently-shipping Bedrock model IDs (as of 2026-06).
+            # If the model you want isn't here (e.g. Opus 4.7/4.8 reachable
+            # only via InvokeModel without an ARN-versioned id), set the
+            # `model` setting directly.
+            return [
+                "anthropic.claude-opus-4-6-v1",
+                "anthropic.claude-opus-4-5-20251101-v1:0",
+                "anthropic.claude-sonnet-4-6",
+                "anthropic.claude-sonnet-4-5-20250929-v1:0",
+                "anthropic.claude-haiku-4-5-20251001-v1:0",
+                "us.anthropic.claude-opus-4-6-v1",
+                "us.anthropic.claude-opus-4-5-20251101-v1:0",
+                "us.anthropic.claude-sonnet-4-6",
+                "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+                "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                "eu.anthropic.claude-opus-4-6-v1",
+                "eu.anthropic.claude-sonnet-4-6",
+                "eu.anthropic.claude-sonnet-4-5-20250929-v1:0",
+                "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+                "apac.anthropic.claude-opus-4-6-v1",
+                "global.anthropic.claude-opus-4-6-v1",
+                "global.anthropic.claude-sonnet-4-6",
+                "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+            ]
 
         if not self.api_key:
             sublime.error_message(
