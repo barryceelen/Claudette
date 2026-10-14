@@ -33,12 +33,6 @@ from .settings.select_model_panel import ClaudetteSelectModelPanelCommand
 from .settings.select_system_message_panel import (
     ClaudetteSelectSystemMessagePanelCommand,
 )
-from .statusbar.spinner import ClaudetteSpinner
-
-
-def plugin_loaded():
-    spinner = ClaudetteSpinner()
-    spinner.start("Claudette", 1000)
 
 
 def plugin_unloaded():
