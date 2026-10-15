@@ -58,6 +58,10 @@ def handle_model_not_found(error_message, window, settings, fallback_callback):
         window: The Sublime Text window (may be None).
         settings: The plugin settings object.
         fallback_callback: Called with a plain error if window is unavailable.
+
+    Returns:
+        bool: True when the error was shown in the chat view. False when
+        fallback_callback was used instead.
     """
     from ..utils import claudette_chat_status_message
 
@@ -84,10 +88,12 @@ def handle_model_not_found(error_message, window, settings, fallback_callback):
                     )
             except Exception as ex:
                 print("Error adding select model button: {0}".format(str(ex)))
-    else:
-        fallback_callback(
-            "[Error] {0} Please update your model via "
-            "Settings > Package Settings > Claudette > Select Model.".format(
-                display_message
-            )
+        return True
+
+    fallback_callback(
+        "[Error] {0} Please update your model via "
+        "Settings > Package Settings > Claudette > Select Model.".format(
+            display_message
         )
+    )
+    return False

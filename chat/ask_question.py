@@ -14,6 +14,15 @@ from ..utils import (
 from .chat_view import ClaudetteChatView
 
 
+def _error_feedback_text(error_message):
+    """Return error text for chat feedback, without the [Error] label."""
+    text = (error_message or "").strip()
+    label = "[Error]"
+    if text.startswith(label):
+        text = text[len(label) :].strip()
+    return text
+
+
 class ClaudetteAskQuestionCommand(sublime_plugin.WindowCommand):
     """WindowCommand so Tools menu works without a focused editor view."""
 
@@ -252,11 +261,22 @@ class ClaudetteAskQuestionCommand(sublime_plugin.WindowCommand):
             request_view_id = self.chat_view.view.id()
             cancellation_token = self.chat_view.start_request(request_view_id)
 
-            def on_complete(usage_info=None):
+            def on_complete(usage_info=None, failed=False, error_message=None):
                 # Clear the active request token for this view
                 self.chat_view.clear_request(request_view_id)
                 # Clear in-chat tool status so it is not in saved response
                 self.chat_view.clear_tool_status()
+                if failed:
+                    # Keep the error out of history. Status feedback is
+                    # appended after this, so it is not stored as a reply.
+                    self.chat_view.discard_pending_user_turn()
+                    self.chat_view.on_streaming_complete()
+                    feedback = _error_feedback_text(error_message)
+                    if feedback:
+                        claudette_chat_status_message(
+                            self.get_window(), feedback, "⚠️"
+                        )
+                    return
                 # Add response to conversation history after streaming ends
                 response_end = self.chat_view.view.size()
                 response_region = sublime.Region(message_start, response_end)

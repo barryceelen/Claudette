@@ -293,7 +293,10 @@ class ClaudetteClaudeAPI:
 
         def handle_error(error_msg):
             sublime.set_timeout(
-                lambda: chunk_callback(error_msg, is_done=True), 0
+                lambda msg=error_msg: chunk_callback(
+                    "", is_done=True, failed=True, error_message=msg
+                ),
+                0,
             )
 
         def check_cancelled():
@@ -359,9 +362,16 @@ class ClaudetteClaudeAPI:
                     if is_model_not_found_error(
                         e.code, error_type, error_message
                     ):
-                        handle_model_not_found(
+                        shown = handle_model_not_found(
                             error_message, window, settings, handle_error
                         )
+                        if shown:
+                            sublime.set_timeout(
+                                lambda: chunk_callback(
+                                    "", is_done=True, failed=True
+                                ),
+                                0,
+                            )
                         return
                     handle_error("[Error] {0}".format(error_message))
                     return
@@ -630,7 +640,10 @@ class ClaudetteClaudeAPI:
 
         def handle_error(error_msg):
             sublime.set_timeout(
-                lambda: chunk_callback(error_msg, is_done=True), 0
+                lambda msg=error_msg: chunk_callback(
+                    "", is_done=True, failed=True, error_message=msg
+                ),
+                0,
             )
 
         def is_cancelled():
@@ -1056,9 +1069,16 @@ class ClaudetteClaudeAPI:
                 error_type, error_message = parse_api_error(e)
                 if is_model_not_found_error(e.code, error_type, error_message):
                     window = chat_view.window() if chat_view else None
-                    handle_model_not_found(
+                    shown = handle_model_not_found(
                         error_message, window, self.settings, handle_error
                     )
+                    if shown:
+                        sublime.set_timeout(
+                            lambda: chunk_callback(
+                                "", is_done=True, failed=True
+                            ),
+                            0,
+                        )
                 else:
                     handle_error("[Error] {0}".format(error_message))
             except urllib.error.URLError as e:

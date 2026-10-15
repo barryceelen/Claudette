@@ -341,6 +341,30 @@ class ClaudetteChatView:
         """Append assistant response to conversation history."""
         self.add_to_conversation("assistant", response)
 
+    def discard_pending_user_turn(self):
+        """Drop the user message recorded for a request that failed.
+
+        The question stays visible in the chat. It is removed from the
+        history sent on later requests so a client-side error is not treated
+        as a completed turn.
+        """
+        if not self.view:
+            return
+
+        conversation = self.get_conversation_history()
+        if not conversation or conversation[-1].get("role") != "user":
+            return
+
+        conversation.pop()
+        try:
+            self.view.settings().set(
+                "claudette_conversation_json", json.dumps(conversation)
+            )
+        except (TypeError, ValueError):
+            print(
+                f"{PLUGIN_NAME} Error: Could not encode conversation history"
+            )
+
     def append_text(self, text, scroll_to_end=False):
         """Append text to the chat view."""
         if not self.view:

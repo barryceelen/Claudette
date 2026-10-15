@@ -53,9 +53,24 @@ class ClaudetteStreamingResponseHandler:
         defer_to_end=False,
         was_cancelled=False,
         usage_info=None,
+        failed=False,
+        error_message=None,
     ):
         if usage_info:
             self._usage_info = usage_info
+
+        # Failures are client feedback, not assistant text. Do not write them
+        # into the response body; on_complete shows them and drops the turn.
+        if failed:
+            if self._completed:
+                return
+            if self.line_buffer:
+                self._output_text(self.line_buffer)
+                self.line_buffer = ""
+            self._completed = True
+            if self.on_complete:
+                self.on_complete(failed=True, error_message=error_message)
+            return
 
         if insert_after_response_header and chunk:
             self._insert_at_response_header(chunk)
