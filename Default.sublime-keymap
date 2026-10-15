@@ -20,5 +20,28 @@
 				"operand": true
 			}
 		]
+	},
+	{
+		"keys": ["<character>"],
+		"command": "claudette_ask_question",
+		"context": [
+			{
+				"key": "setting.claudette_is_chat_view",
+				"operator": "equal",
+				"operand": true
+			}
+		]
+	},
+	{
+		"keys": [" "],
+		"command": "claudette_ask_question",
+		"args": {"initial_text": " "},
+		"context": [
+			{
+				"key": "setting.claudette_is_chat_view",
+				"operator": "equal",
+				"operand": true
+			}
+		]
 	}
 ]

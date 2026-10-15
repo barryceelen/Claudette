@@ -105,9 +105,17 @@ class ClaudetteAskQuestionCommand(sublime_plugin.WindowCommand):
 
         self.send_to_claude(code, question.strip())
 
-    def run(self, code=None, question=None):
+    def run(self, code=None, question=None, initial_text="", character=""):
+        """Open the ask panel, or send code and question when both are given.
+
+        ``character`` is supplied by the ``<character>`` key binding when the
+        chat view is focused. It seeds the panel the same way ``initial_text``
+        does.
+        """
         try:
             self.load_settings()
+            if not initial_text and character:
+                initial_text = character
 
             window = self.get_window()
             if not window:
@@ -133,7 +141,7 @@ class ClaudetteAskQuestionCommand(sublime_plugin.WindowCommand):
 
             view = window.show_input_panel(
                 "Ask Claude:",
-                "",
+                initial_text or "",
                 lambda q: self.handle_input(selected_text, q),
                 None,
                 None,
@@ -145,6 +153,17 @@ class ClaudetteAskQuestionCommand(sublime_plugin.WindowCommand):
                     f"{PLUGIN_NAME} Error: Could not create input panel"
                 )
                 return
+
+            # The panel selects the seeded text. Move the caret to the end
+            # on the next tick so the following keystroke appends.
+            if initial_text:
+                panel = view
+
+                def place_caret():
+                    panel.sel().clear()
+                    panel.sel().add(sublime.Region(panel.size()))
+
+                sublime.set_timeout(place_caret, 0)
 
         except Exception as e:
             print(f"{PLUGIN_NAME} Error in run command: {str(e)}")
