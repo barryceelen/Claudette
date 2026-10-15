@@ -17,7 +17,7 @@ from ..constants import (
     MAX_TOKENS,
     SETTINGS_FILE,
 )
-from ..statusbar.spinner import ClaudetteSpinner
+from ..statusbar.spinner import ClaudetteSpinner, show_view_status
 from ..tools.text_editor import (
     get_allowed_roots,
     resolve_path,
@@ -339,7 +339,7 @@ class ClaudetteClaudeAPI:
             max_chars = None
 
         try:
-            self.spinner.start("Fetching response")
+            self.spinner.start("Fetching response", view=view_for_api)
             current_messages = list(filtered)
 
             while True:
@@ -565,7 +565,10 @@ class ClaudetteClaudeAPI:
                             sess["cost"],
                         )
                         sublime.set_timeout(
-                            lambda s=status_msg: sublime.status_message(s), 100
+                            lambda s=status_msg, v=view_for_api: (
+                                show_view_status(v, s)
+                            ),
+                            100,
                         )
                     usage_info = {
                         "input_tokens": input_tokens,
@@ -645,8 +648,10 @@ class ClaudetteClaudeAPI:
             )
             return
 
+        view_for_status = getattr(chat_view, "view", chat_view)
+
         try:
-            self.spinner.start("Fetching response")
+            self.spinner.start("Fetching response", view=view_for_status)
 
             headers = {
                 "x-api-key": self.api_key,
@@ -803,11 +808,8 @@ class ClaudetteClaudeAPI:
                                     and content_block.get("name")
                                     == "web_search"
                                 ):
-                                    sublime.set_timeout(
-                                        lambda: sublime.status_message(
-                                            "Searching the web..."
-                                        ),
-                                        0,
+                                    self.spinner.set_message(
+                                        "Searching the web..."
                                     )
                                 elif block_type == "web_search_tool_result":
                                     stream_web_search_sources = []
@@ -855,7 +857,7 @@ class ClaudetteClaudeAPI:
                                                 claudette_chat_status_message(
                                                     v.window(), msg, "⚠️"
                                                 )
-                                            sublime.status_message(msg)
+                                            self.spinner.set_message(msg)
 
                                         sublime.set_timeout(
                                             show_web_search_error, 0
@@ -864,9 +866,8 @@ class ClaudetteClaudeAPI:
                                         stream_web_search_sources.extend(
                                             sources_lines
                                         )
-                                        sublime.set_timeout(
-                                            lambda: sublime.status_message(""),
-                                            0,
+                                        self.spinner.set_message(
+                                            "Fetching response"
                                         )
 
                             elif data.get("type") == "content_block_delta":
@@ -1027,8 +1028,8 @@ class ClaudetteClaudeAPI:
                                 )
 
                                 sublime.set_timeout(
-                                    lambda s=status_msg: (
-                                        sublime.status_message(s)
+                                    lambda s=status_msg, v=view_for_status: (
+                                        show_view_status(v, s)
                                     ),
                                     100,
                                 )
