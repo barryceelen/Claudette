@@ -1,4 +1,23 @@
 {
+	// Provider: "anthropic" (default) or "bedrock" (AWS Bedrock).
+	// When set to "bedrock", requests are signed with AWS SigV4 and sent
+	// to the Bedrock runtime endpoint. No api_key is required.
+	"provider": "anthropic",
+	// AWS region for Bedrock (only used when provider is "bedrock").
+	"aws_region": "us-east-1",
+	// AWS credentials for Bedrock. Resolution order:
+	//   1. aws_access_key_id + aws_secret_access_key (+ optional aws_session_token)
+	//   2. AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY environment variables
+	//   3. aws_profile setting (calls `aws configure export-credentials`)
+	//   4. Default profile via `aws configure export-credentials`
+	// Steps 3 and 4 require the AWS CLI v2 to be installed and on PATH.
+	// Resolved credentials are cached per profile until their reported
+	// Expiration (or for ~15 minutes when no expiration is reported).
+	// "aws_access_key_id": "",
+	// "aws_secret_access_key": "",
+	// "aws_session_token": "",
+	// "aws_profile": "",
+	//
 	// API key configuration. You can define a single key or multiple keys.
 	//
 	// Example for a single key:
